@@ -2,9 +2,17 @@ package cli
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+
+	"github.com/helmwave/nelmwave/internal/config"
+	"github.com/helmwave/nelmwave/internal/plan"
+	"github.com/helmwave/nelmwave/internal/tpl"
 )
 
 // errNotImplemented marks skeleton commands whose milestone is not done yet.
@@ -21,12 +29,79 @@ func newBuildCommand(_ *globalOptions) *cobra.Command {
 		Use:   "build",
 		Short: "Render nelmwave.yml.tpl and write the plan to .nelmwave/",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			logger := loggerFrom(cmd.Context()).With(zap.String("phase", "build"))
-			logger.Info("build invoked", zap.String("file", o.file), zap.String("output", o.output))
-			return errNotImplemented
+			return runBuild(cmd, o)
 		},
 	}
 	cmd.Flags().StringVar(&o.file, "file", "nelmwave.yml.tpl", "path to the nelmwave manifest (.tpl or plain yml)")
-	cmd.Flags().StringVar(&o.output, "output", ".nelmwave", "directory for the built plan and artifacts")
+	cmd.Flags().StringVar(&o.output, "output", plan.DefaultDir, "directory for the built plan and artifacts")
 	return cmd
+}
+
+func runBuild(cmd *cobra.Command, o *buildOptions) error {
+	ctx := cmd.Context()
+	logger := loggerFrom(ctx).With(zap.String("phase", "build"))
+
+	manifest, err := resolveManifest(o.file, cmd.Flags().Changed("file"))
+	if err != nil {
+		return err
+	}
+	logger.Info("building", zap.String("file", manifest), zap.String("output", o.output))
+
+	src, err := os.ReadFile(manifest)
+	if err != nil {
+		return fmt.Errorf("read manifest %q: %w", manifest, err)
+	}
+
+	// Render only templated manifests; a plain .yml is loaded verbatim.
+	rendered := src
+	if isTemplate(manifest) {
+		rendered, err = tpl.Render(ctx, filepath.Base(manifest), src, tpl.Options{})
+		if err != nil {
+			return err
+		}
+		logger.Debug("manifest rendered", zap.Int("bytes", len(rendered)))
+	}
+
+	cfg, err := config.Parse(rendered)
+	if err != nil {
+		return err
+	}
+	if err := config.Validate(cfg); err != nil {
+		return fmt.Errorf("invalid manifest:\n%w", err)
+	}
+
+	p := plan.FromConfig(cfg)
+	if err := p.Write(o.output); err != nil {
+		return err
+	}
+
+	logger.Info("plan written",
+		zap.String("path", filepath.Join(o.output, plan.PlanfileName)),
+		zap.Int("releases", len(p.Releases)),
+	)
+	return nil
+}
+
+// isTemplate reports whether path should be rendered through gomplate.
+func isTemplate(path string) bool {
+	return strings.HasSuffix(path, ".tpl")
+}
+
+// resolveManifest returns the manifest path to build. When the user did not set
+// --file and the default .tpl is absent, it falls back to a plain nelmwave.yml.
+func resolveManifest(file string, changed bool) (string, error) {
+	if changed {
+		if _, err := os.Stat(file); err != nil {
+			return "", fmt.Errorf("manifest %q not found: %w", file, err)
+		}
+		return file, nil
+	}
+	if _, err := os.Stat(file); err == nil {
+		return file, nil
+	}
+	fallback := "nelmwave.yml"
+	if _, err := os.Stat(fallback); err == nil {
+		return fallback, nil
+	}
+	return "", fmt.Errorf("no manifest found (looked for %q and %q)", file, fallback)
 }

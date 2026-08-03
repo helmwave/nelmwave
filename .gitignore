@@ -1,5 +1,5 @@
-# nelmwave build artifacts
-/.nelmwave/
+# nelmwave build artifacts (anywhere, incl. examples/)
+.nelmwave/
 
 # compiled binary
 /nelmwave

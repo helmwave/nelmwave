@@ -3,6 +3,8 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -24,10 +26,15 @@ type globalOptions struct {
 }
 
 // NewRootCommand builds the root `nelmwave` command with all subcommands
-// attached. It is the single entry point used by cmd/nelmwave.
+// attached, using a fresh set of global options. Useful for tests.
 func NewRootCommand() *cobra.Command {
-	opts := &globalOptions{}
+	return newRootCommand(&globalOptions{})
+}
 
+// newRootCommand builds the root command around a caller-provided options
+// struct, so Execute can read the constructed logger back out (opts.logger)
+// after the run to report top-level errors.
+func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "nelmwave",
 		Short:         "Declarative release orchestrator on top of nelm",
@@ -80,11 +87,15 @@ func Execute() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	root := NewRootCommand()
+	opts := &globalOptions{}
+	root := newRootCommand(opts)
 	if err := root.ExecuteContext(ctx); err != nil {
-		// Logger may not be built yet (e.g. flag parse error); fall back to stderr.
-		if logger := loggerFrom(root.Context()); logger != nil {
-			logger.Error("command failed", zap.Error(err))
+		// opts.logger is nil only if we failed before PersistentPreRunE (e.g. a
+		// flag parse error), in which case cobra already printed the message.
+		if opts.logger != nil {
+			opts.logger.Error("command failed", zap.Error(err))
+		} else {
+			fmt.Fprintln(os.Stderr, "Error:", err)
 		}
 		return 1
 	}

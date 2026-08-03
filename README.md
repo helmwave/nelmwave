@@ -10,9 +10,9 @@ manifest: it renders the manifest through gomplate, resolves values and
 companion files from arbitrary datasources, builds a dependency graph between
 releases, and applies everything through nelm — in parallel, respecting order.
 
-> **Status: early development.** This repository currently contains the CLI
-> skeleton (M1 scaffolding). Commands are wired but not yet implemented — see
-> the milestones in [`prompt.md`](./prompt.md).
+> **Status: early development (M1).** `build` renders a manifest, validates it,
+> and writes a self-contained plan to `.nelmwave/`. `up`/`down`/`diff` are wired
+> but not yet implemented — see the milestones in [`prompt.md`](./prompt.md).
 
 ## Building
 
@@ -40,15 +40,34 @@ Release selection uses Kubernetes-style label selectors:
 nelmwave up -l 'app=api,env in (prod,stg),tier!=db'
 ```
 
+## Try the build
+
+```sh
+cd examples/quickstart
+ENV=stg go run github.com/helmwave/nelmwave/cmd/nelmwave build
+cat .nelmwave/planfile.yml
+```
+
+Manifests are rendered by gomplate v5 using `[[ ]]` action delimiters; the
+render context exposes `.Env`/`getenv` and gomplate's standard function
+namespaces (`strings`, `datasource`, ...).
+
 ## Layout
 
 ```
 cmd/nelmwave/        # main(): CLI entry point
 internal/
   cli/               # cobra commands: build, up, down, diff
+  config/            # nelmwave.yml schema, confijer load, validation, selectors
+  tpl/               # gomplate v5 rendering ([[ ]] delimiters)
+  plan/              # .nelmwave/ plan build/read/write
   log/               # zap setup (auto console/json)
   version/           # build-time version info
 ```
 
-Further packages (`config`, `tpl`, `datasource`, `plan`, `graph`, `release`,
-`chart`, `kubedep`) land on their respective milestones.
+Further packages (`datasource`, `graph`, `release`, `chart`, `kubedep`) land on
+their respective milestones.
+
+> **Note on confijer:** the manifest loader binds keys via `json` struct tags
+> (case-insensitively), not `yaml` tags. Config structs therefore carry both
+> `json` (for loading) and `yaml` (for plan serialization) tags in sync.
