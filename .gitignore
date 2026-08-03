@@ -1,0 +1,16 @@
+# nelmwave build artifacts
+/.nelmwave/
+
+# compiled binary
+/nelmwave
+/dist/
+
+# Go
+*.test
+*.out
+coverage.txt
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
