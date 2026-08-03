@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 
@@ -26,17 +27,19 @@ const (
 )
 
 // Plan is the flat, fully-resolved deployment plan persisted to disk.
+// Registries, Repositories and Releases are keyed by identity, mirroring the
+// manifest. yaml.v3 marshals map keys in sorted order, so output is deterministic.
 type Plan struct {
-	Project      string              `yaml:"project"`
-	Registries   []config.Registry   `yaml:"registries,omitempty"`
-	Repositories []config.Repository `yaml:"repositories,omitempty"`
-	Releases     []Release           `yaml:"releases"`
+	Project      string                       `yaml:"project"`
+	Registries   map[string]config.Registry   `yaml:"registries,omitempty"`
+	Repositories map[string]config.Repository `yaml:"repositories,omitempty"`
+	Releases     map[string]Release           `yaml:"releases"`
 }
 
-// Release is a plan entry for a single release. It mirrors config.Release but
-// adds resolved artifact paths filled by later build stages.
+// Release is a plan entry for a single release, keyed by name in Plan.Releases.
+// It mirrors config.Release but adds resolved artifact paths filled by later
+// build stages.
 type Release struct {
-	Name      string                  `yaml:"name"`
 	Namespace string                  `yaml:"namespace"`
 	Labels    map[string]string       `yaml:"labels,omitempty"`
 	Needs     []string                `yaml:"needs,omitempty"`
@@ -57,11 +60,10 @@ func FromConfig(cfg *config.Config) *Plan {
 		Project:      cfg.Project,
 		Registries:   cfg.Registries,
 		Repositories: cfg.Repositories,
-		Releases:     make([]Release, 0, len(cfg.Releases)),
+		Releases:     make(map[string]Release, len(cfg.Releases)),
 	}
-	for _, r := range cfg.Releases {
-		p.Releases = append(p.Releases, Release{
-			Name:      r.Name,
+	for name, r := range cfg.Releases {
+		p.Releases[name] = Release{
 			Namespace: r.Namespace,
 			Labels:    r.Labels,
 			Needs:     r.Needs,
@@ -70,9 +72,19 @@ func FromConfig(cfg *config.Config) *Plan {
 			Values:    r.Values,
 			Store:     r.Store,
 			Options:   r.Options,
-		})
+		}
 	}
 	return p
+}
+
+// ReleaseNames returns the release names in deterministic (sorted) order.
+func (p *Plan) ReleaseNames() []string {
+	names := make([]string, 0, len(p.Releases))
+	for name := range p.Releases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Write serializes the plan to dir/planfile.yml, creating dir if needed.

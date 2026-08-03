@@ -9,11 +9,11 @@ func TestParse_DefaultsAndJSONTagBinding(t *testing.T) {
 	data := []byte(`
 project: demo
 repositories:
-  - name: bitnami
+  bitnami:
     url: https://charts.bitnami.com/bitnami
     force_update: true
 releases:
-  - name: cache
+  cache:
     namespace: app
     universal:
       image: redis:7
@@ -25,13 +25,14 @@ releases:
 		t.Fatalf("Parse: %v", err)
 	}
 
-	if len(cfg.Repositories) != 1 || !cfg.Repositories[0].ForceUpdate {
+	repo, ok := cfg.Repositories["bitnami"]
+	if !ok || !repo.ForceUpdate {
 		t.Errorf("force_update should bind to true via json tag, got %+v", cfg.Repositories)
 	}
-	if len(cfg.Releases) != 1 {
-		t.Fatalf("want 1 release, got %d", len(cfg.Releases))
+	r, ok := cfg.Releases["cache"]
+	if !ok {
+		t.Fatalf("release %q missing; got %v", "cache", cfg.Releases)
 	}
-	r := cfg.Releases[0]
 	if !r.Options.CreateNamespace {
 		t.Errorf("createNamespace should default to true, got false")
 	}
@@ -58,10 +59,10 @@ func mustParseValid(t *testing.T, yml string) *Config {
 func TestValidate_OK(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
-  - name: db
+  db:
     namespace: data
     chart: { ref: bitnami/postgresql }
-  - name: api
+  api:
     namespace: app
     needs: [db]
     chart: { ref: oci://r/api }
@@ -76,22 +77,14 @@ func TestValidate_Errors(t *testing.T) {
 		yml  string
 		want string
 	}{
-		"duplicate name": {
-			yml: `
-releases:
-  - {name: a, namespace: n, chart: {ref: r/a}}
-  - {name: a, namespace: n, chart: {ref: r/a}}
-`,
-			want: "duplicate release name",
-		},
 		"no chart source": {
-			yml:  "releases:\n  - {name: a, namespace: n}\n",
+			yml:  "releases:\n  a: {namespace: n}\n",
 			want: "either chart.ref or a universal block",
 		},
 		"both chart and universal": {
 			yml: `
 releases:
-  - name: a
+  a:
     namespace: n
     chart: { ref: r/a }
     universal: { image: x }
@@ -99,21 +92,21 @@ releases:
 			want: "mutually exclusive",
 		},
 		"unknown need": {
-			yml:  "releases:\n  - {name: a, namespace: n, chart: {ref: r/a}, needs: [ghost]}\n",
+			yml:  "releases:\n  a: {namespace: n, chart: {ref: r/a}, needs: [ghost]}\n",
 			want: `needs unknown release "ghost"`,
 		},
 		"self need": {
-			yml:  "releases:\n  - {name: a, namespace: n, chart: {ref: r/a}, needs: [a]}\n",
+			yml:  "releases:\n  a: {namespace: n, chart: {ref: r/a}, needs: [a]}\n",
 			want: "needs itself",
 		},
 		"missing namespace": {
-			yml:  "releases:\n  - {name: a, chart: {ref: r/a}}\n",
+			yml:  "releases:\n  a: {chart: {ref: r/a}}\n",
 			want: "namespace is required",
 		},
 		"invalid label key": {
 			yml: `
 releases:
-  - name: a
+  a:
     namespace: n
     chart: { ref: r/a }
     labels: { "bad label": v }
@@ -138,9 +131,9 @@ releases:
 func TestValidate_DetectsCycle(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
-  - {name: a, namespace: n, chart: {ref: r/a}, needs: [b]}
-  - {name: b, namespace: n, chart: {ref: r/b}, needs: [c]}
-  - {name: c, namespace: n, chart: {ref: r/c}, needs: [a]}
+  a: {namespace: n, chart: {ref: r/a}, needs: [b]}
+  b: {namespace: n, chart: {ref: r/b}, needs: [c]}
+  c: {namespace: n, chart: {ref: r/c}, needs: [a]}
 `)
 	err := Validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "cycle") {

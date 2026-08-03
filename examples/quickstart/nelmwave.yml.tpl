@@ -1,18 +1,19 @@
 # Quickstart nelmwave manifest, rendered by gomplate (double-square-bracket delimiters).
 project: my-platform
 
+# Maps keyed by identity: registries by host, repositories/releases by name.
 registries:
-  - host: registry.example.com
+  registry.example.com:
     username: [[ getenv "REGISTRY_USER" "anonymous" ]]
     password: [[ getenv "REGISTRY_PASS" "" ]]
 
 repositories:
-  - name: bitnami
+  bitnami:
     url: https://charts.bitnami.com/bitnami
     force_update: true
 
 releases:
-  - name: postgres
+  postgres:
     namespace: data
     labels:
       app: postgres
@@ -24,7 +25,7 @@ releases:
     values:
       - src: file://values/pg.yml.tpl
 
-  - name: api
+  api:
     namespace: app
     labels:
       app: api
@@ -41,7 +42,7 @@ releases:
       - src: file://extra/netpol.yml
         dst: manifests/netpol.yml
 
-  - name: cache
+  cache:
     namespace: app
     labels: { app: redis, tier: cache, env: prod }
     universal:

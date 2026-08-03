@@ -1,9 +1,8 @@
 package config
 
-// Release is a single deployable unit: one nelm release.
+// Release is a single deployable unit: one nelm release. It is keyed by name in
+// Config.Releases, so it carries no name field of its own.
 type Release struct {
-	// Name is the release name (unique within a manifest).
-	Name string `json:"name" yaml:"name"`
 	// Namespace is the target Kubernetes namespace.
 	Namespace string `json:"namespace" yaml:"namespace"`
 	// Labels are used for k8s-style selection (-l) and are free-form.

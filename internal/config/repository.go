@@ -1,9 +1,8 @@
 package config
 
-// Repository is a classic Helm chart repository.
+// Repository is a classic Helm chart repository. It is keyed by name in
+// Config.Repositories, so it carries no name field of its own.
 type Repository struct {
-	// Name is the local repo alias used in chart refs (name/chart).
-	Name string `json:"name" yaml:"name"`
 	// URL is the repository index URL.
 	URL string `json:"url" yaml:"url"`
 	// Username / Password are optional basic-auth credentials.

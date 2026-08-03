@@ -3,88 +3,83 @@ package config
 import (
 	"errors"
 	"fmt"
+	"sort"
 )
 
 // Validate checks a parsed Config for structural correctness:
-//   - release names are present and unique;
+//   - release names (map keys) are non-empty;
 //   - every release selects exactly one chart source (chart.ref XOR universal);
 //   - a namespace is set;
 //   - labels are valid Kubernetes labels;
 //   - needs reference existing releases, don't self-reference, and form a DAG
 //     (no cycles).
 //
-// All problems are collected and returned as a single joined error.
+// Release names are unique by construction (map keys). All problems are
+// collected and returned as a single joined error, in deterministic order.
 func Validate(cfg *Config) error {
 	var errs []error
 
-	byName := make(map[string]struct{}, len(cfg.Releases))
-	for _, r := range cfg.Releases {
-		if r.Name == "" {
+	for _, name := range sortedReleaseNames(cfg.Releases) {
+		r := cfg.Releases[name]
+		if name == "" {
 			errs = append(errs, errors.New("release with empty name"))
 			continue
 		}
-		if _, dup := byName[r.Name]; dup {
-			errs = append(errs, fmt.Errorf("duplicate release name %q", r.Name))
-			continue
-		}
-		byName[r.Name] = struct{}{}
-	}
-
-	for _, r := range cfg.Releases {
-		if r.Name == "" {
-			continue
-		}
 		if r.Namespace == "" {
-			errs = append(errs, fmt.Errorf("release %q: namespace is required", r.Name))
+			errs = append(errs, fmt.Errorf("release %q: namespace is required", name))
 		}
-		if err := validateChartSource(r); err != nil {
+		if err := validateChartSource(name, r); err != nil {
 			errs = append(errs, err)
 		}
-		if err := validateLabels(r.Name, r.Labels); err != nil {
+		if err := validateLabels(name, r.Labels); err != nil {
 			errs = append(errs, err)
 		}
 		for _, need := range r.Needs {
-			if need == r.Name {
-				errs = append(errs, fmt.Errorf("release %q: needs itself", r.Name))
+			if need == name {
+				errs = append(errs, fmt.Errorf("release %q: needs itself", name))
 				continue
 			}
-			if _, ok := byName[need]; !ok {
-				errs = append(errs, fmt.Errorf("release %q: needs unknown release %q", r.Name, need))
+			if _, ok := cfg.Releases[need]; !ok {
+				errs = append(errs, fmt.Errorf("release %q: needs unknown release %q", name, need))
 			}
 		}
 	}
 
-	if cycle := findCycle(cfg.Releases, byName); len(cycle) > 0 {
+	if cycle := findCycle(cfg.Releases); len(cycle) > 0 {
 		errs = append(errs, fmt.Errorf("needs form a cycle: %s", formatCycle(cycle)))
 	}
 
 	return joinErrors(errs)
 }
 
-func validateChartSource(r Release) error {
+func validateChartSource(name string, r Release) error {
 	hasRef := r.Chart.Ref != ""
 	hasUniversal := r.Universal != nil
 	switch {
 	case !hasRef && !hasUniversal:
-		return fmt.Errorf("release %q: needs either chart.ref or a universal block", r.Name)
+		return fmt.Errorf("release %q: needs either chart.ref or a universal block", name)
 	case hasRef && hasUniversal:
-		return fmt.Errorf("release %q: chart.ref and universal are mutually exclusive", r.Name)
+		return fmt.Errorf("release %q: chart.ref and universal are mutually exclusive", name)
 	default:
 		return nil
 	}
 }
 
 // findCycle returns a cycle in the needs graph (list of release names), or nil.
-// Edges point from a release to each of its needs. valid restricts traversal to
-// known release names so unknown-need errors aren't double-reported here.
-func findCycle(releases []Release, valid map[string]struct{}) []string {
+// Edges point from a release to each of its needs. Traversal is restricted to
+// known releases so unknown-need errors aren't double-reported here. Nodes are
+// visited in sorted order for deterministic output.
+func findCycle(releases map[string]Release) []string {
+	names := sortedReleaseNames(releases)
+
 	needs := make(map[string][]string, len(releases))
-	for _, r := range releases {
-		for _, n := range r.Needs {
-			if _, ok := valid[n]; ok && n != r.Name {
-				needs[r.Name] = append(needs[r.Name], n)
+	for _, name := range names {
+		for _, n := range releases[name].Needs {
+			if _, ok := releases[n]; ok && n != name {
+				needs[name] = append(needs[name], n)
 			}
 		}
+		sort.Strings(needs[name])
 	}
 
 	const (
@@ -119,14 +114,24 @@ func findCycle(releases []Release, valid map[string]struct{}) []string {
 		return nil
 	}
 
-	for _, r := range releases {
-		if r.Name != "" && color[r.Name] == white {
-			if c := dfs(r.Name); c != nil {
+	for _, name := range names {
+		if color[name] == white {
+			if c := dfs(name); c != nil {
 				return c
 			}
 		}
 	}
 	return nil
+}
+
+// sortedReleaseNames returns the release names in deterministic (sorted) order.
+func sortedReleaseNames(releases map[string]Release) []string {
+	names := make([]string, 0, len(releases))
+	for name := range releases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func formatCycle(cycle []string) string {
