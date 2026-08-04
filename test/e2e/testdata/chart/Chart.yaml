@@ -1,0 +1,6 @@
+apiVersion: v2
+name: nelmwave-e2e
+description: Minimal chart for the nelmwave end-to-end suite
+type: application
+version: 0.1.0
+appVersion: "1"

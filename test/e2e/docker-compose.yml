@@ -1,0 +1,77 @@
+# A throwaway single-node Kubernetes cluster for the end-to-end suite.
+#
+# k3s runs as an ordinary container, so docker-compose owns the whole lifecycle
+# (unlike kind, whose CLI creates and configures the node itself). nelmwave only
+# ever talks to the Kubernetes API, so which distribution serves it is a detail
+# of the fixture, not of what is under test.
+#
+#   docker-compose -f test/e2e/docker-compose.yml up -d --wait
+#   KUBECONFIG=test/e2e/.kube/kubeconfig.yaml go test -tags e2e ./test/e2e/...
+#   docker-compose -f test/e2e/docker-compose.yml down -v
+name: nelmwave-e2e
+
+services:
+  k3s:
+    image: rancher/k3s:v1.31.14-k3s1
+    # cgroup v2 forbids enabling controllers for children while processes sit in
+    # the group itself, so kubelet cannot create /kubepods under the namespace
+    # root it was handed. Moving PID 1 into an "init" leaf and passing the
+    # controllers down is the same dance k3s' own rootless mode performs.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+          mkdir -p /sys/fs/cgroup/init
+          echo 1 > /sys/fs/cgroup/init/cgroup.procs
+          sed -e 's/ / +/g' -e 's/^/+/' /sys/fs/cgroup/cgroup.controllers \
+            > /sys/fs/cgroup/cgroup.subtree_control
+        fi
+        exec /bin/k3s "$@"
+      - -- # placeholder for $0, so `command:` below lands in "$@"
+    # Every disabled component is one less image to pull and schedule. None of
+    # them is reachable from what the suite exercises.
+    command:
+      - server
+      - --disable=traefik
+      - --disable=metrics-server
+      - --disable=servicelb
+      - --disable-helm-controller
+      - --tls-san=127.0.0.1
+      # Under a rootless runtime the container cannot write kernel knobs
+      # (vm/overcommit_memory, kernel/panic, conntrack limits). These two flags
+      # tell kubelet and kube-proxy to skip them instead of refusing to start.
+      # They are no-ops on a rootful runtime, so the file stays portable.
+      - --kubelet-arg=feature-gates=KubeletInUserNamespace=true
+      - --kube-proxy-arg=conntrack-max-per-core=0
+    # k3s mounts cgroups and manages network namespaces for the workloads it runs.
+    privileged: true
+    ports:
+      - "6443:6443"
+    tmpfs:
+      - /run
+      - /var/run
+    volumes:
+      # kubelet opens the kernel ring buffer at startup. A rootless container
+      # runtime refuses that even when privileged ("open /dev/kmsg: operation
+      # not permitted"), and the node never registers. Masking it with /dev/null
+      # gives kubelet an immediate EOF, which it is fine with. Harmless under a
+      # rootful runtime, where the real device would have worked anyway.
+      - /dev/null:/dev/kmsg
+      - k3s-data:/var/lib/rancher/k3s
+      # The kubeconfig k3s writes here points at https://127.0.0.1:6443, which is
+      # exactly what the published port exposes to the test process.
+      - ./.kube:/output
+    environment:
+      K3S_KUBECONFIG_OUTPUT: /output/kubeconfig.yaml
+      K3S_KUBECONFIG_MODE: "644"
+    # `up --wait` blocks until this passes, so the test never races the API server.
+    healthcheck:
+      test: ["CMD", "kubectl", "get", "--raw=/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+
+volumes:
+  k3s-data:

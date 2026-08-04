@@ -1,0 +1,9 @@
+# Defaults for the e2e chart. Every one of them is overridden somewhere in the
+# suite (via values files or `sets`), so a stale default shows up as a failed
+# assertion rather than as silently untested code.
+message: default
+replicas: 1
+
+# pause does nothing and exits never — enough for a Deployment to become ready
+# without pulling anything substantial.
+image: registry.k8s.io/pause:3.9

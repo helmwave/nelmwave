@@ -1,0 +1,3 @@
+# Overridden by the release's `sets:` — the suite asserts the set wins.
+message: from-values-file
+replicas: 1
