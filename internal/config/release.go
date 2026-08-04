@@ -10,10 +10,9 @@ type Release struct {
 	// edges), by explicit uniqname and/or by label selector.
 	Needs Needs `json:"needs" yaml:"needs,omitempty"`
 
-	// Chart points at a helm-repo or OCI chart. Mutually exclusive with Universal.
+	// Chart points at a helm-repo or OCI chart. Required (the built-in universal
+	// chart is deferred to a later milestone).
 	Chart Chart `json:"chart" yaml:"chart"`
-	// Universal, when set, deploys the built-in universal chart instead of Chart.
-	Universal *UniversalValues `json:"universal" yaml:"universal"`
 
 	// Values are per-release value sources, merged on top of global Values.
 	Values []FileRef `json:"values" yaml:"values"`
@@ -27,7 +26,6 @@ type Release struct {
 // Chart identifies a chart source.
 type Chart struct {
 	// Name is a helm-repo chart (repo/chart) or an OCI ref (oci://host/chart).
-	// An empty Name together with a Universal block selects the built-in chart.
 	Name string `json:"name" yaml:"name"`
 	// Version is a chart version or constraint.
 	Version string `json:"version" yaml:"version"`
@@ -44,10 +42,4 @@ type ReleaseOptions struct {
 	// AutoRollback rolls back to the last deployed revision on failure
 	// (nelm AutoRollback, akin to helm --atomic).
 	AutoRollback bool `json:"autoRollback" yaml:"autoRollback"`
-}
-
-// UsesUniversalChart reports whether this release deploys the built-in chart:
-// it has a Universal block and no explicit chart name.
-func (r Release) UsesUniversalChart() bool {
-	return r.Universal != nil && r.Chart.Name == ""
 }

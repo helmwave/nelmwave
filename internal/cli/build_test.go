@@ -16,9 +16,9 @@ project: demo
 releases:
   cache@app:
     labels: { app: redis }
-    universal:
-      image: redis:[[ getenv "REDIS_TAG" "7" ]]
-      service: { port: 6379 }
+    chart:
+      name: bitnami/redis
+      version: [[ getenv "REDIS_VER" "20.x" ]]
 `
 	if err := os.WriteFile(manifest, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
@@ -38,8 +38,8 @@ releases:
 	if p.Project != "demo" || len(p.Releases) != 1 {
 		t.Fatalf("unexpected plan: %+v", p)
 	}
-	if got := p.Releases["cache@app"].Universal.Image; got != "redis:7" {
-		t.Errorf("template not rendered into values, image=%q", got)
+	if got := p.Releases["cache@app"].Chart.Version; got != "20.x" {
+		t.Errorf("template not rendered into manifest, chart.version=%q", got)
 	}
 }
 

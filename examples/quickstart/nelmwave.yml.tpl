@@ -54,7 +54,6 @@ releases:
           tier: db
         # matchExpressions:
         #   - { key: env, operator: In, values: [prod, stg] }
-    universal:
-      image: redis:7
-      service:
-        port: 6379
+    chart:
+      name: bitnami/redis
+      version: 20.x

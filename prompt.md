@@ -19,6 +19,8 @@
 >   `needs.labels` (k8s `LabelSelector`: `matchLabels`+`matchExpressions`). Зависимость — объединение.
 > - **Datasources — свой резолвер** на gomplate v5 (fileref v0.2.0 непригоден как библиотека).
 > - **SOPS отложен**: в MVP только `.yml`/`.yml.tpl`; `.yml.sops` → «not supported yet».
+> - **Встроенный универсальный chart отложен** (пост-MVP): `chart.name` обязателен, блока
+>   `universal:` в схеме пока нет (§12/M5 — на будущее).
 > - **confijer биндит по `json`-тегу** (не `yaml`) через `EqualFold`; в config-структурах — двойные
 >   теги `json`+`yaml` (json для загрузки, yaml для сериализации planfile).
 
@@ -67,7 +69,7 @@ nelm — параллельно, с учётом порядка.
 | Модель needs | **DAG с параллельностью** (топосорт + concurrent-исполнение независимых веток). Зависимости — по uniqname (`needs.releases`) и по k8s-селектору (`needs.labels`) |
 | Селектор | **Kubernetes-style label selector** (`app=api,env in (prod,stg),tier!=db`) |
 | Хранилище build | каталог **`.nelmwave/`** (planfile + распакованные charts/values/store-files) |
-| Универсальный chart | **вшит в бинарь** через `go:embed`, конфигурируется через confijer-схему |
+| Универсальный chart | **отложен (пост-MVP)**; в перспективе — вшит через `go:embed`, конфиг по confijer-схеме |
 | CLI | **cobra** (рекомендуется; согласуй, если хочешь иное) |
 
 **MVP команды (первый релиз):** `build`, `up`, `down`, `diff` (aka `plan`).
@@ -236,12 +238,10 @@ releases:
     needs:
       labels:                          # k8s LabelSelector: ждать все релизы-БД
         matchLabels: { tier: db }
-    # без chart.name → используется ВСТРОЕННЫЙ универсальный chart (§12)
-    universal:
-      image: redis:7
-      service:
-        port: 6379
-      # confijer-схема универсального chart'а
+    chart:
+      name: bitnami/redis
+      version: 20.x
+    # (встроенный универсальный chart и блок universal: отложены — §12)
 ```
 
 ### 5.2 Структуры (confijer-friendly) — реализовано
@@ -250,9 +250,10 @@ releases:
   (ключ=uniqname), глобальные `Values []FileRef`.
 - Идентичность релиза — тип **`Uniqname{Name, Namespace, KubeContext}`** (парсинг/канонизация
   ключа и `needs.releases`). Поля-идентификатора в value-структурах НЕТ.
-- `Release`: `Labels map[string]string`, `Needs Needs`, `Chart{Name, Version}`,
-  `Values []FileRef`, `Store []FileRef`, `Universal *UniversalValues`, `Options ReleaseOptions`
+- `Release`: `Labels map[string]string`, `Needs Needs`, `Chart{Name, Version}` (обязателен),
+  `Values []FileRef`, `Store []FileRef`, `Options ReleaseOptions`
   (проброс nelm-опций: timeout, autoRollback≈atomic, createNamespace, …).
+  *(блок `universal:`/`UniversalValues` отложен — §12.)*
 - **`FileRef`** (единый для values и store): `Src`, `Dst` (только store), `Optional`, `Strict`.
   Принимает 4 формы (строка/мапа × со схемой/без).
 - **`Needs`**: `Releases map[string]NeedRelease` (`{Strict, …}`) + `Labels *LabelSelector`
@@ -274,7 +275,7 @@ releases:
 2. Загрузить результат в `config.Config` через confijer.
 3. Валидация: уникальность uniqname (гарантируется ключами мапы), существование целей `needs`,
    отсутствие циклов в DAG (вкл. label-рёбра), корректность label-ключей/значений,
-   `chart.name` XOR `universal`.
+   обязательный `chart.name`.
 4. Для каждого релиза: резолв **values** и **store files** через `internal/datasource`
    (render/copy; sops отложен), deep-merge values (§9).
 5. (Опц., но желательно) распаковать/подготовить charts локально для воспроизводимости в CI.
@@ -380,7 +381,10 @@ releases:
 
 ---
 
-## 12. Встроенный универсальный chart [FIXED]
+## 12. Встроенный универсальный chart [ОТЛОЖЕНО — пост-MVP]
+
+> **Отложено** (решение владельца, 2026-08-04). В текущей схеме блока `universal:` НЕТ, `chart.name`
+> обязателен. Раздел ниже — целевой дизайн на будущее (milestone после MVP).
 
 - Обычный Helm-chart, **вшитый в бинарь** через `go:embed` (каталог `internal/chart/universal/`).
 - Активируется, когда у релиза **не задан** `chart.name`, но задан блок `universal:`.
@@ -455,7 +459,7 @@ releases:
 
 1. **M1 — Скелет + конфиг. ✅ Готово.** `go.mod` (Go 1.26), cobra-скелет, zap, `internal/config`
    со схемой (мапы/uniqname/FileRef/Needs), confijer-загрузка, gomplate-рендер `nelmwave.yml.tpl`
-   (`[[ ]]`). Команда `build` рендерит, валидирует (chart.name XOR universal, needs/циклы, labels),
+   (`[[ ]]`). Команда `build` рендерит, валидирует (обязательный chart.name, needs/циклы, labels),
    пишет `planfile.yml` в `.nelmwave/`. Тесты на парсинг/валидацию/рендер/канонизацию.
 2. **M2 — Datasources.** Собственный `internal/datasource` поверх gomplate v5 (НЕ fileref): values
    (deep-merge, порядок) + store files, запись в `.nelmwave/values|store/`, заполнение `valuesFile`
@@ -464,8 +468,8 @@ releases:
    поверх `action.ReleaseInstall/ReleaseUninstall`, параллельное исполнение, `up`/`down`.
    Селекция по labels (`-l`). Интеграционный тест на kind/локальный кластер (или мок nelm-слоя).
 4. **M4 — diff/plan.** `action.ReleasePlanInstall`, `--detailed-exitcode`.
-5. **M5 — Универсальный chart.** `go:embed` chart, confijer-values, набор ресурсов из §12,
-   активация через `universal:`.
+5. **M5 — Универсальный chart. [ОТЛОЖЕНО — пост-MVP]** `go:embed` chart, confijer-values, набор
+   ресурсов из §12, активация через `universal:`. В MVP не входит; `chart.name` обязателен.
 6. **M6 — Registries/repos.** OCI login, helm repo, переопределение repo/registry config.
 7. **M7 — Needs между ресурсами.** Аннотации nelm в универсальном chart'е (+ по возможности внешние).
 8. **M8 — Полировка.** Логи, ошибки, docs, `--help`, примеры в `examples/`.
@@ -481,7 +485,8 @@ releases:
 - `nelmwave build` из примера `examples/` даёт корректный `.nelmwave/planfile.yml`.
 - `nelmwave up -l '...'` разворачивает подмножество релизов в правильном порядке (проверено на
   kind), `down` сносит в обратном; `diff` показывает изменения.
-- Универсальный chart разворачивает Deployment+Service+Ingress+ConfigMap+Secret+HPA из `universal:`.
+- ~~Универсальный chart разворачивает Deployment+Service+Ingress+ConfigMap+Secret+HPA из `universal:`.~~
+  *(отложено — пост-MVP, §12.)*
 - Values и store-files тянутся из ≥2 разных datasource-схем.
 - README с быстрым стартом и описанием схемы `nelmwave.yml`.
 

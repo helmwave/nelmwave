@@ -40,13 +40,12 @@ type Plan struct {
 // ("name[@namespace[@kubecontext]]") in Plan.Releases. It mirrors config.Release
 // but adds resolved artifact paths filled by later build stages.
 type Release struct {
-	Labels    map[string]string       `yaml:"labels,omitempty"`
-	Needs     config.Needs            `yaml:"needs,omitempty"`
-	Chart     config.Chart            `yaml:"chart,omitempty"`
-	Universal *config.UniversalValues `yaml:"universal,omitempty"`
-	Values    []config.FileRef        `yaml:"values,omitempty"`
-	Store     []config.FileRef        `yaml:"store,omitempty"`
-	Options   config.ReleaseOptions   `yaml:"options"`
+	Labels  map[string]string     `yaml:"labels,omitempty"`
+	Needs   config.Needs          `yaml:"needs,omitempty"`
+	Chart   config.Chart          `yaml:"chart,omitempty"`
+	Values  []config.FileRef      `yaml:"values,omitempty"`
+	Store   []config.FileRef      `yaml:"store,omitempty"`
+	Options config.ReleaseOptions `yaml:"options"`
 
 	// ValuesFile is the plan-relative path to the merged values file. Empty
 	// until the datasource milestone resolves and merges values.
@@ -63,13 +62,12 @@ func FromConfig(cfg *config.Config) *Plan {
 	}
 	for name, r := range cfg.Releases {
 		p.Releases[name] = Release{
-			Labels:    r.Labels,
-			Needs:     r.Needs,
-			Chart:     r.Chart,
-			Universal: r.Universal,
-			Values:    r.Values,
-			Store:     r.Store,
-			Options:   r.Options,
+			Labels:  r.Labels,
+			Needs:   r.Needs,
+			Chart:   r.Chart,
+			Values:  r.Values,
+			Store:   r.Store,
+			Options: r.Options,
 		}
 	}
 	return p

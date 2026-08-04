@@ -7,7 +7,7 @@ import (
 )
 
 // Validate checks a parsed Config for structural correctness:
-//   - every release selects exactly one chart source (chart.name XOR universal);
+//   - every release has a chart.name (the built-in universal chart is deferred);
 //   - labels are valid Kubernetes labels;
 //   - needs reference existing releases, don't self-reference, and form a DAG
 //     (no cycles).
@@ -68,16 +68,10 @@ func sortedNeedKeys(m map[string]NeedRelease) []string {
 }
 
 func validateChartSource(name string, r Release) error {
-	hasChart := r.Chart.Name != ""
-	hasUniversal := r.Universal != nil
-	switch {
-	case !hasChart && !hasUniversal:
-		return fmt.Errorf("release %q: needs either chart.name or a universal block", name)
-	case hasChart && hasUniversal:
-		return fmt.Errorf("release %q: chart.name and universal are mutually exclusive", name)
-	default:
-		return nil
+	if r.Chart.Name == "" {
+		return fmt.Errorf("release %q: chart.name is required", name)
 	}
+	return nil
 }
 
 // findCycle returns a cycle in the needs graph (list of release keys), or nil.

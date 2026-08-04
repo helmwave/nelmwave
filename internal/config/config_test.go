@@ -14,10 +14,9 @@ repositories:
     force_update: true
 releases:
   cache@app:
-    universal:
-      image: redis:7
-      service:
-        port: 6379
+    chart:
+      name: bitnami/redis
+      version: 20.x
 `)
 	cfg, err := Parse(data)
 	if err != nil {
@@ -35,14 +34,8 @@ releases:
 	if !r.Options.CreateNamespace {
 		t.Errorf("createNamespace should default to true, got false")
 	}
-	if r.Universal == nil || r.Universal.Service == nil || r.Universal.Service.Port != 6379 {
-		t.Errorf("universal.service.port not parsed: %+v", r.Universal)
-	}
-	if r.Universal.Replicas != 1 {
-		t.Errorf("universal.replicas should default to 1, got %d", r.Universal.Replicas)
-	}
-	if !r.UsesUniversalChart() {
-		t.Errorf("release with universal block and no chart.name should use universal chart")
+	if r.Chart.Name != "bitnami/redis" || r.Chart.Version != "20.x" {
+		t.Errorf("chart not parsed: %+v", r.Chart)
 	}
 }
 
@@ -79,18 +72,9 @@ func TestValidate_Errors(t *testing.T) {
 		yml  string
 		want string
 	}{
-		"no chart source": {
+		"missing chart.name": {
 			yml:  "releases:\n  a: {}\n",
-			want: "either chart.name or a universal block",
-		},
-		"both chart and universal": {
-			yml: `
-releases:
-  a:
-    chart: { name: r/a }
-    universal: { image: x }
-`,
-			want: "mutually exclusive",
+			want: "chart.name is required",
 		},
 		"unknown need": {
 			yml:  "releases:\n  a: {chart: { name: r/a}, needs: {releases: {ghost: {}}}}\n",
