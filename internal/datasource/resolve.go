@@ -1,11 +1,12 @@
 // Package datasource resolves values/store file references (FileRef.Src) into
 // bytes, and deep-merges values documents.
 //
-// A reference is either a local path (schemeless, or file://) read directly, or
-// a URL with a gomplate datasource scheme (env:, http(s)://, s3://, vault://,
-// git://, ...) read through gomplate v5's `include`. The content is then
-// post-processed by extension: *.tpl/*.tmpl are rendered as gomplate templates,
-// *.sops is rejected (deferred), everything else is copied verbatim.
+// Every reference is read through gomplate v5's `include`, which returns the raw
+// datasource content: local paths (schemeless or file://) become absolute
+// file:// URLs, other schemes (env:, http(s)://, s3://, vault://, git://, ...)
+// are passed through as-is. The content is then post-processed by extension:
+// *.tpl/*.tmpl are rendered as gomplate templates, *.sops is rejected
+// (deferred), everything else is copied verbatim.
 package datasource
 
 import (
@@ -14,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -76,30 +76,33 @@ func classify(src string) kind {
 	}
 }
 
-// fetch returns the raw bytes of src: local files directly, scheme URLs via
-// gomplate's include.
+// fetch returns the raw bytes of src via gomplate's include. Local references
+// (schemeless or file://) are resolved to an absolute file:// URL against
+// BaseDir; other schemes are passed through unchanged.
 func (r *Resolver) fetch(ctx context.Context, src string) ([]byte, error) {
 	u, err := url.Parse(src)
-	if err == nil && u.Scheme != "" && u.Scheme != "file" {
-		return r.fetchDatasource(ctx, src, u)
-	}
-
-	path := src
-	if err == nil && u.Scheme == "file" {
-		path = u.Host + u.Path
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(r.BaseDir, path)
-	}
-	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %q: %w", src, err)
+		return nil, fmt.Errorf("parse source %q: %w", src, err)
 	}
-	return data, nil
+	if u.Scheme == "" || u.Scheme == "file" {
+		path := src
+		if u.Scheme == "file" {
+			path = u.Host + u.Path
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(r.BaseDir, path)
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("resolve path %q: %w", src, err)
+		}
+		u = &url.URL{Scheme: "file", Path: abs}
+	}
+	return r.fetchDatasource(ctx, src, u)
 }
 
-// fetchDatasource reads a scheme URL through gomplate's include, which returns
-// the raw datasource content without parsing it.
+// fetchDatasource reads a datasource URL through gomplate's include, which
+// returns the raw content without parsing it.
 func (r *Resolver) fetchDatasource(ctx context.Context, src string, u *url.URL) ([]byte, error) {
 	renderer := gomplate.NewRenderer(gomplate.RenderOptions{
 		LDelim:      tpl.DefaultLeftDelim,
