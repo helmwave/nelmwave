@@ -1,5 +1,7 @@
-// Package datasource resolves values/store file references (FileRef.Src) into
-// bytes, and deep-merges values documents.
+// Package datasource resolves a values/store file reference (FileRef.Src) into
+// bytes. Nothing more: merging of multiple values files is left to nelm
+// (Helm-native ordered merge), so this package only turns a reference into
+// content.
 //
 // Every reference is read through gomplate v5's `include`, which returns the raw
 // datasource content: local paths (schemeless or file://) become absolute

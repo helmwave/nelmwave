@@ -278,7 +278,8 @@ releases:
    отсутствие циклов в DAG (вкл. label-рёбра), корректность label-ключей/значений,
    обязательный `chart.name`.
 4. Для каждого релиза: резолв **values** и **store files** через `internal/datasource`
-   (render/copy; sops отложен), deep-merge values (§9).
+   (render/copy; sops отложен). Values НЕ мёржатся — каждый источник → отдельный файл,
+   список отдаётся в nelm (§9).
 5. (Опц., но желательно) распаковать/подготовить charts локально для воспроизводимости в CI.
 6. Записать **planfile** и артефакты в `.nelmwave/`:
    ```
@@ -334,10 +335,12 @@ releases:
 - **4 эквивалентные формы записи** (нормализуются при parse): `{src: url}`, голая строка `url`,
   со схемой или без. Нет схемы или `file://` → голый локальный путь; прочие схемы (`env:`,
   `vault://`, `s3://`, `http(s)://`, `git://`, …) — verbatim.
-- **Порядок мёрджа** [FIXED]: глобальные `Values` (корень config) → per-release `Values`,
-  **deep-merge**, последний источник побеждает (override). Скаляры/массивы — replace, мапы — merge.
-- Результат — `.nelmwave/values/<uniqname>.yml`, путь пишется в planfile (`valuesFile`), передаётся
-  в nelm как values релиза.
+- **Порядок и мёрдж** [обновлено]: nelmwave НЕ мёржит values сам — каждый источник резолвится в
+  отдельный файл, и весь упорядоченный список отдаётся в nelm (`ValuesFiles`), который делает
+  helm-native ordered deep-merge (мапы merge, скаляры/массивы replace, последний побеждает).
+  Порядок: глобальные `Values` (корень config) → per-release `Values`.
+- Артефакты — `.nelmwave/values/<uniqname>/<NN>-<label>.yml` (NN — индекс порядка), список путей
+  пишется в planfile (`valuesFiles`).
 - Флаги источника: `optional` (нет файла → пропустить, не падать), `strict`.
 
 ---
@@ -468,11 +471,12 @@ releases:
    (`[[ ]]`). Команда `build` рендерит, валидирует (обязательный chart.name, needs/циклы, labels),
    пишет `planfile.yml` в `.nelmwave/`. Тесты на парсинг/валидацию/рендер/канонизацию.
 2. **M2 — Datasources. ✅ Готово.** Собственный `internal/datasource` поверх gomplate v5 (НЕ
-   fileref): fetch (локальные пути напрямую, схемы через gomplate `include`) + классификация по
-   расширению (copy/`.tpl`-render/`.sops`-defer) + deep-merge values (global→release). Оркестрация
-   в `internal/build`: запись `.nelmwave/values/<uniqname>.yml` и `store/<uniqname>/<dst>`,
-   заполнение `valuesFile` в planfile. Тесты: голый путь, `env:`, `.tpl`-рендер, sops-defer,
-   optional-skip, deep-merge.
+   fileref): fetch всё через gomplate `include` (локальные пути → абсолютный `file://`, схемы как
+   есть) + классификация по расширению (copy/`.tpl`-render/`.sops`-defer). Мёрдж values НЕ делаем —
+   отдаём nelm список файлов. Оркестрация в `internal/build`: запись
+   `.nelmwave/values/<uniqname>/<NN>-<label>.yml` и `store/<uniqname>/<dst>`, список `valuesFiles`
+   в planfile. Тесты: `env:`, `.tpl`-рендер, sops-defer, missing→fs.ErrNotExist, optional-skip,
+   порядок values.
 3. **M3 — DAG + nelm up/down.** `internal/graph` (топосорт, циклы), адаптер `internal/release`
    поверх `action.ReleaseInstall/ReleaseUninstall`, параллельное исполнение, `up`/`down`.
    Селекция по labels (`-l`). Интеграционный тест на kind/локальный кластер (или мок nelm-слоя).

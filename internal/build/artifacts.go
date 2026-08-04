@@ -55,7 +55,8 @@ func resolveValues(ctx context.Context, res *datasource.Resolver, cfg *config.Co
 	refs = append(refs, cfg.Values...) // global (lowest precedence)
 	refs = append(refs, rc.Values...)  // per-release (overrides)
 
-	var docs [][]byte
+	relDir := filepath.Join(valuesDir, sanitize(key))
+	var files []string
 	for _, ref := range refs {
 		data, err := res.Resolve(ctx, ref.Src)
 		if err != nil {
@@ -65,26 +66,54 @@ func resolveValues(ctx context.Context, res *datasource.Resolver, cfg *config.Co
 			}
 			return fmt.Errorf("release %q: resolve values %q: %w", key, ref.Src, err)
 		}
-		docs = append(docs, data)
+		name := valuesFileName(len(files), ref.Src)
+		if err := writeFile(filepath.Join(relDir, name), data); err != nil {
+			return err
+		}
+		files = append(files, filepath.ToSlash(filepath.Join(plan.ValuesDir, sanitize(key), name)))
 	}
-	if len(docs) == 0 {
+	if len(files) == 0 {
 		return nil
 	}
 
-	merged, err := datasource.MergeValues(docs)
-	if err != nil {
-		return fmt.Errorf("release %q: %w", key, err)
-	}
-	name := sanitize(key) + ".yml"
-	if err := writeFile(filepath.Join(valuesDir, name), merged); err != nil {
-		return err
-	}
-
 	rel := p.Releases[key]
-	rel.ValuesFile = filepath.ToSlash(filepath.Join(plan.ValuesDir, name))
+	rel.ValuesFiles = files
 	p.Releases[key] = rel
-	log.Debug("values merged", zap.Int("sources", len(docs)), zap.String("file", rel.ValuesFile))
+	log.Debug("values resolved", zap.Int("files", len(files)))
 	return nil
+}
+
+// valuesFileName builds an ordered, collision-free file name for a resolved
+// values source: a zero-padded index prefix keeps the nelm merge order, plus a
+// sanitized label derived from the source for readability.
+func valuesFileName(index int, src string) string {
+	label := src
+	if i := strings.IndexAny(label, "?#"); i >= 0 {
+		label = label[:i]
+	}
+	label = strings.TrimSuffix(strings.TrimSuffix(label, ".tpl"), ".tmpl")
+	label = pathBase(label)
+	label = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, label)
+	if label == "" {
+		label = "values"
+	}
+	return fmt.Sprintf("%02d-%s", index, label)
+}
+
+// pathBase returns the last '/'-separated segment of s (URLs and manifest paths
+// both use '/'), without importing path just for this.
+func pathBase(s string) string {
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		return s[i+1:]
+	}
+	return s
 }
 
 func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Release, key, storeDir string, log *zap.Logger) error {

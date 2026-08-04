@@ -4,19 +4,19 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
 
 	"github.com/helmwave/nelmwave/internal/config"
 	"github.com/helmwave/nelmwave/internal/plan"
 )
 
-func TestArtifacts_MergesValuesAndWritesStore(t *testing.T) {
+func TestArtifacts_WritesOrderedValuesAndStore(t *testing.T) {
 	base := t.TempDir()
-	mustWrite(t, base, "common.yml", "resources:\n  requests:\n    cpu: 50m\n    memory: 64Mi\n")
-	mustWrite(t, base, "pg.yml.tpl", "resources:\n  requests:\n    cpu: [[ getenv \"CPU\" \"250m\" ]]\n")
+	mustWrite(t, base, "common.yml", "resources:\n  requests:\n    cpu: 50m\n")
+	mustWrite(t, base, "pg.yml.tpl", "replicas: [[ getenv \"N\" \"3\" ]]\n")
 	mustWrite(t, base, "netpol.yml", "kind: NetworkPolicy\n")
 
 	cfg := &config.Config{
@@ -36,26 +36,23 @@ func TestArtifacts_MergesValuesAndWritesStore(t *testing.T) {
 		t.Fatalf("Artifacts: %v", err)
 	}
 
-	// values merged: global memory kept, per-release cpu overrides.
-	data, err := os.ReadFile(filepath.Join(out, "values", "db@data.yml"))
+	// Plan lists both values files, global before per-release.
+	got := p.Releases["db@data"].ValuesFiles
+	want := []string{"values/db@data/00-common.yml", "values/db@data/01-pg.yml"}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("ValuesFiles = %v, want %v", got, want)
+	}
+
+	// The per-release template was rendered when written (no merge performed).
+	data, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(got[1])))
 	if err != nil {
-		t.Fatalf("read merged values: %v", err)
+		t.Fatalf("read values file: %v", err)
 	}
-	var v map[string]any
-	if err := yaml.Unmarshal(data, &v); err != nil {
-		t.Fatal(err)
-	}
-	req := v["resources"].(map[string]any)["requests"].(map[string]any)
-	if req["cpu"] != "250m" || req["memory"] != "64Mi" {
-		t.Errorf("unexpected merged requests: %v", req)
+	if strings.TrimSpace(string(data)) != "replicas: 3" {
+		t.Errorf("rendered values = %q", data)
 	}
 
-	// plan records the values path.
-	if got := p.Releases["db@data"].ValuesFile; got != "values/db@data.yml" {
-		t.Errorf("ValuesFile = %q", got)
-	}
-
-	// store file written at its dst.
+	// Store file written at its dst.
 	if _, err := os.Stat(filepath.Join(out, "store", "db@data", "manifests", "netpol.yml")); err != nil {
 		t.Errorf("store file missing: %v", err)
 	}
@@ -77,8 +74,8 @@ func TestArtifacts_OptionalMissingSkipped(t *testing.T) {
 	if err := Artifacts(context.Background(), cfg, p, base, out, zap.NewNop()); err != nil {
 		t.Fatalf("optional-missing should not fail: %v", err)
 	}
-	if p.Releases["a@n"].ValuesFile != "" {
-		t.Errorf("no values file expected when the only source is a skipped optional")
+	if len(p.Releases["a@n"].ValuesFiles) != 0 {
+		t.Errorf("no values files expected when the only source is a skipped optional")
 	}
 }
 

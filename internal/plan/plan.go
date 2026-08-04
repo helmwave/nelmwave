@@ -46,9 +46,10 @@ type Release struct {
 	Store   []config.FileRef      `yaml:"store,omitempty"`
 	Options config.ReleaseOptions `yaml:"options"`
 
-	// ValuesFile is the plan-relative path to the merged values file. Empty
-	// until the datasource milestone resolves and merges values.
-	ValuesFile string `yaml:"valuesFile,omitempty"`
+	// ValuesFiles are the plan-relative paths to the resolved values files, in
+	// precedence order (lowest first: global values, then per-release). They are
+	// passed to nelm as-is; nelm performs the ordered Helm-style merge.
+	ValuesFiles []string `yaml:"valuesFiles,omitempty"`
 }
 
 // FromConfig projects a validated Config into a Plan.
