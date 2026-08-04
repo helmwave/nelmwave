@@ -62,7 +62,7 @@ func resolveValues(ctx context.Context, res *datasource.Resolver, rc config.Rele
 			}
 			return fmt.Errorf("release %q: resolve values %q: %w", key, ref.Src, err)
 		}
-		name, err := artifactName(len(files), ref.Src, ref.Alias)
+		name, err := artifactName(len(files), ref.Src, ref.Name)
 		if err != nil {
 			return fmt.Errorf("release %q: values: %w", key, err)
 		}
@@ -83,15 +83,15 @@ func resolveValues(ctx context.Context, res *datasource.Resolver, rc config.Rele
 }
 
 // artifactName returns the file name for a resolved values/store artifact: the
-// caller-provided alias (a relative path under the release's artifact dir) when
+// caller-provided name (a relative path under the release's artifact dir) when
 // set, otherwise an index-prefixed sanitized basename for deterministic,
 // collision-free ordering.
-func artifactName(index int, src, alias string) (string, error) {
-	if alias != "" {
-		if !safeRelPath(alias) {
-			return "", fmt.Errorf("alias %q escapes the artifact directory", alias)
+func artifactName(index int, src, name string) (string, error) {
+	if name != "" {
+		if !safeRelPath(name) {
+			return "", fmt.Errorf("name %q escapes the artifact directory", name)
 		}
-		return alias, nil
+		return name, nil
 	}
 	return indexedBasename(index, src), nil
 }
@@ -139,7 +139,7 @@ func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Relea
 			}
 			return fmt.Errorf("release %q: resolve store %q: %w", key, s.Src, err)
 		}
-		name, err := artifactName(written, s.Src, s.Alias)
+		name, err := artifactName(written, s.Src, s.Name)
 		if err != nil {
 			return fmt.Errorf("release %q: store: %w", key, err)
 		}

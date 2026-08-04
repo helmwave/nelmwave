@@ -1,7 +1,7 @@
 package config
 
 // FileRef is a single file source resolved through the datasource layer. The
-// same type backs both a release's values and its store files. Alias optionally
+// same type backs both a release's values and its store files. Name optionally
 // names the resolved artifact under .nelmwave/; when empty an index-prefixed
 // basename is used. The internal artifact directory layout is otherwise owned
 // by nelmwave, not the user.
@@ -22,9 +22,9 @@ type FileRef struct {
 	// Behaviour is chosen by extension: *.yml/*.yaml are copied, *.yml.tpl are
 	// rendered through gomplate. (*.yml.sops is reserved; not supported yet.)
 	Src string `json:"src" yaml:"src"`
-	// Alias names the resolved artifact file under .nelmwave/ (values or store).
+	// Name names the resolved artifact file under .nelmwave/ (values or store).
 	// Empty means nelmwave derives an index-prefixed basename automatically.
-	Alias string `json:"alias" yaml:"alias,omitempty"`
+	Name string `json:"name" yaml:"name,omitempty"`
 	// Optional: a missing source is skipped instead of failing.
 	Optional bool `json:"optional" yaml:"optional,omitempty"`
 	// Strict: fail loudly on any resolution warning.

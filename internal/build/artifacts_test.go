@@ -24,7 +24,7 @@ func TestArtifacts_WritesOrderedValuesAndStore(t *testing.T) {
 			"db@data": {
 				Chart:  config.Chart{Name: "r/db"},
 				Values: []config.FileRef{{Src: "common.yml"}, {Src: "pg.yml.tpl"}},
-				Store:  []config.FileRef{{Src: "netpol.yml", Alias: "custom-netpol.yml"}},
+				Store:  []config.FileRef{{Src: "netpol.yml", Name: "custom-netpol.yml"}},
 			},
 		},
 	}
@@ -109,7 +109,7 @@ func TestArtifacts_StoreWithoutAliasUsesIndexedBasename(t *testing.T) {
 		Releases: map[string]config.Release{
 			"r@n": {
 				Chart: config.Chart{Name: "c/r"},
-				Store: []config.FileRef{{Src: "a.yml"}, {Src: "b.yml", Alias: "named.yml"}},
+				Store: []config.FileRef{{Src: "a.yml"}, {Src: "b.yml", Name: "named.yml"}},
 			},
 		},
 	}

@@ -14,8 +14,9 @@
 >   опущены, берётся текущий kube-context/его дефолтный namespace (резолв на apply-этапе).
 >   Value-структуры не содержат поля-идентификатора. kube-context может содержать `@`.
 > - **`chart.name`** вместо `chart.ref`.
-> - **`values` и `store` — единый тип `FileRef`** (`Src, Dst, Optional, Strict`), принимает 4
->   эквивалентные формы (строка/мапа × со схемой/без; нет схемы или `file://` → голый путь).
+> - **`values` и `store` — единый тип `FileRef`** (`Src, Name, Optional, Strict`; `Name` — имя
+>   артефакта под `.nelmwave/`, раскладкой владеет nelmwave), принимает 4 эквивалентные формы
+>   (строка/мапа × со схемой/без; нет схемы или `file://` → голый путь).
 > - **`needs` — структура**: `needs.releases` (мапа по uniqname → `{strict, …}`) + инлайн k8s-селектор
 >   `needs.matchLabels` + `needs.matchLabelsExpressions`. Зависимость — объединение.
 > - **Datasources — свой резолвер** на gomplate v5 (fileref v0.2.0 непригоден как библиотека).
@@ -261,9 +262,9 @@ releases:
   `Values []FileRef`, `Store []FileRef`, `Options ReleaseOptions`
   (проброс nelm-опций: timeout, autoRollback≈atomic, createNamespace, …).
   *(блок `universal:`/`UniversalValues` отложен — §12.)*
-- **`FileRef`** (единый для values и store): `Src`, `Alias` (имя артефакта под `.nelmwave/`;
+- **`FileRef`** (единый для values и store): `Src`, `Name` (имя артефакта под `.nelmwave/`;
   пусто → `<NN>-<basename>`), `Optional`, `Strict`. Принимает 4 формы (строка/мапа × со схемой/без).
-  Внутренней раскладкой `.nelmwave/` управляет nelmwave, пользователь задаёт только `src`+`alias`.
+  Внутренней раскладкой `.nelmwave/` управляет nelmwave, пользователь задаёт только `src`+`name`.
 - **`Sets map[string]any`** — inline-оверрайды (YAML-мапа: ключ — dotted-путь как helm `--set`,
   значение сохраняет YAML-тип), поверх values (высший приоритет); конвертируются в nelm
   `ValuesSetJSON` (`key=json`, типобезопасно), ключи сортируются.
@@ -358,8 +359,8 @@ releases:
 
 ## 10. StoreFiles (тот же резолвер)
 
-- `Release.Store []FileRef{ Src, Alias, ... }` — произвольные файлы, резолвятся тем же резолвером
-  (правила copy/render; sops отложен) и складываются в `.nelmwave/store/<uniqname>/<alias|NN-basename>`.
+- `Release.Store []FileRef{ Src, Name, ... }` — произвольные файлы, резолвятся тем же резолвером
+  (правила copy/render; sops отложен) и складываются в `.nelmwave/store/<uniqname>/<name|NN-basename>`.
 - Назначение: доп. манифесты и сопутствующие артефакты релиза (напр. NetworkPolicy, CRD, конфиги),
   которые нужно приложить/сохранить рядом с планом. Реши политику применения:
   - как дополнительные манифесты, подаваемые nelm вместе с релизом, **или**
@@ -485,7 +486,7 @@ releases:
    fileref): fetch всё через gomplate `include` (локальные пути → абсолютный `file://`, схемы как
    есть) + классификация по расширению (copy/`.tpl`-render/`.sops`-defer). Мёрдж values НЕ делаем —
    отдаём nelm список файлов. Оркестрация в `internal/build`: запись
-   `.nelmwave/values/<uniqname>/<NN>-<label>.yml` и `store/<uniqname>/<dst>`, список `valuesFiles`
+   `.nelmwave/values/<uniqname>/<NN>-<label>.yml` и `store/<uniqname>/<name>`, список `valuesFiles`
    в planfile. Тесты: `env:`, `.tpl`-рендер, sops-defer, missing→fs.ErrNotExist, optional-skip,
    порядок values.
 3. **M3 — DAG + nelm up/down. ✅ Готово.** `internal/graph` (параллельный DAG-исполнитель:
