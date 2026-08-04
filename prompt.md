@@ -250,9 +250,11 @@ releases:
 ### 5.2 Структуры (confijer-friendly) — реализовано
 - Корень `Config`: `Project string`, `Repositories map[string]Repository`
   (ключ=alias/host; helm-repo + OCI, `IsOCI()` по схеме; значение — голый URL или объект),
-  `Releases map[string]Release` (ключ=uniqname), глобальные `Values []FileRef` (под per-release
-  values) и `Labels map[string]string` (мёржатся в каждый релиз, per-release побеждает; значения
-  лейблов приводятся к строке, так что `common: true` допустимо).
+  `Releases map[string]Release` (ключ=uniqname).
+- **Глобальные дефолты релизов — через confijer type-bucket**: top-level блок `Release:` (имя
+  Go-типа) применяется ко всем релизам. Мапы (`labels`) deep-merge (свой лейбл релиза побеждает);
+  слайсы (`values`) — default-if-absent (релиз со своими values не наследует). Значения лейблов
+  нормализуются в строки (`common: true` ок). Отдельных `Config.Values`/`Config.Labels` НЕТ.
 - Идентичность релиза — тип **`Uniqname{Name, Namespace, KubeContext}`** (парсинг/канонизация
   ключа и `needs.releases`). Поля-идентификатора в value-структурах НЕТ.
 - `Release`: `Labels map[string]string`, `Needs Needs`, `Chart{Name, Version}` (обязателен),

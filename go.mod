@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/hairyhenderson/gomplate/v5 v5.2.0
-	github.com/helmwave/confijer v0.0.0-20260803202104-2e25282eaec9
+	github.com/helmwave/confijer v0.0.0-20260804153433-bcaead09d8ba
 	github.com/spf13/cobra v1.10.2
 	github.com/werf/nelm v1.28.0
 	go.uber.org/zap v1.28.0

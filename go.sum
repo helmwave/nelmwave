@@ -498,6 +498,8 @@ github.com/hashicorp/vault/api/auth/userpass v0.12.0 h1:w2XiddC7J2pZDrc7Wji7iom2
 github.com/hashicorp/vault/api/auth/userpass v0.12.0/go.mod h1:Amijnw7qOV05S9Afx6TH40C8eu9wFaBYM1UEtPhloAI=
 github.com/helmwave/confijer v0.0.0-20260803202104-2e25282eaec9 h1:fZyb4WEniYkL2zWjmelOUFPUGJWkA/942wokihRDWiM=
 github.com/helmwave/confijer v0.0.0-20260803202104-2e25282eaec9/go.mod h1:nIgGGmPzS+dYUxVWpmp0TzzXW/miCtcFQrIBiotiy1I=
+github.com/helmwave/confijer v0.0.0-20260804153433-bcaead09d8ba h1:R/dZ/pPnBHbZC44sMDYao92EnxovsdruZnj8IK8rRBQ=
+github.com/helmwave/confijer v0.0.0-20260804153433-bcaead09d8ba/go.mod h1:nIgGGmPzS+dYUxVWpmp0TzzXW/miCtcFQrIBiotiy1I=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
 github.com/hofstadter-io/cinful v1.0.0 h1:G/kZ/iwM0EyTyEtdE4UyLNLOVNSSHVs1cW0DC7uoxmE=

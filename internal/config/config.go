@@ -12,6 +12,11 @@
 package config
 
 // Config is the root of a nelmwave manifest.
+//
+// Global defaults for releases (e.g. common labels or values) are expressed via
+// confijer's type-default mechanism: a top-level "Release:" block applies to
+// every release. Maps (labels) deep-merge with a release's own values winning;
+// slices (values) act as a default used only when the release omits its own.
 type Config struct {
 	// Project is a free-form name for the whole platform.
 	Project string `json:"project" yaml:"project"`
@@ -21,10 +26,4 @@ type Config struct {
 	Repositories map[string]Repository `json:"repositories" yaml:"repositories"`
 	// Releases are the units nelmwave deploys, keyed by release name.
 	Releases map[string]Release `json:"releases" yaml:"releases"`
-	// Values are global value sources merged beneath every release's own
-	// values (lowest precedence). See the merge order in the datasource layer.
-	Values []FileRef `json:"values" yaml:"values"`
-	// Labels are global labels merged into every release's labels (a release's
-	// own label wins on a key clash). Values are strings (bare true/3 are coerced).
-	Labels map[string]string `json:"labels" yaml:"labels,omitempty"`
 }

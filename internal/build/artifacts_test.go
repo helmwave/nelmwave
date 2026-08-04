@@ -20,11 +20,10 @@ func TestArtifacts_WritesOrderedValuesAndStore(t *testing.T) {
 	mustWrite(t, base, "netpol.yml", "kind: NetworkPolicy\n")
 
 	cfg := &config.Config{
-		Values: []config.FileRef{{Src: "common.yml"}},
 		Releases: map[string]config.Release{
 			"db@data": {
 				Chart:  config.Chart{Name: "r/db"},
-				Values: []config.FileRef{{Src: "pg.yml.tpl"}},
+				Values: []config.FileRef{{Src: "common.yml"}, {Src: "pg.yml.tpl"}},
 				Store:  []config.FileRef{{Src: "netpol.yml", Dst: "manifests/netpol.yml"}},
 			},
 		},
@@ -36,7 +35,7 @@ func TestArtifacts_WritesOrderedValuesAndStore(t *testing.T) {
 		t.Fatalf("Artifacts: %v", err)
 	}
 
-	// Plan lists both values files, global before per-release.
+	// Plan lists the values files in declared order.
 	got := p.Releases["db@data"].ValuesFiles
 	want := []string{"values/db@data/00-common.yml", "values/db@data/01-pg.yml"}
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {

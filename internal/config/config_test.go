@@ -295,21 +295,26 @@ releases:
 	}
 }
 
-func TestParse_GlobalLabelsMerged(t *testing.T) {
+func TestParse_ReleaseTypeDefaults(t *testing.T) {
 	cfg := mustParseValid(t, `
-labels:
-  common: true
-  team: platform
+Release:
+  labels:
+    common: true
+    team: platform
+  values:
+    - common.yml
 releases:
   a@ns:
     labels: { app: a, team: apps }
+    values: [ own.yml ]
     chart: { name: r/a }
   b@ns:
     chart: { name: r/b }
 `)
+	// Labels deep-merge: own label wins, defaults fill the rest; bool coerces.
 	a := cfg.Releases["a@ns"].Labels
 	if a["common"] != "true" {
-		t.Errorf("global bool label should coerce to string, got %q", a["common"])
+		t.Errorf("default bool label should coerce to string, got %q", a["common"])
 	}
 	if a["team"] != "apps" {
 		t.Errorf("per-release label must win, got team=%q", a["team"])
@@ -319,6 +324,14 @@ releases:
 	}
 	b := cfg.Releases["b@ns"].Labels
 	if b["common"] != "true" || b["team"] != "platform" {
-		t.Errorf("release without own labels should inherit globals, got %v", b)
+		t.Errorf("release without own labels should inherit defaults, got %v", b)
+	}
+
+	// Values are a slice default: replaced by a release's own, used when absent.
+	if av := cfg.Releases["a@ns"].Values; len(av) != 1 || av[0].Src != "own.yml" {
+		t.Errorf("a values should be its own, got %v", av)
+	}
+	if bv := cfg.Releases["b@ns"].Values; len(bv) != 1 || bv[0].Src != "common.yml" {
+		t.Errorf("b values should inherit the default, got %v", bv)
 	}
 }

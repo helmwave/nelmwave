@@ -22,8 +22,8 @@ import (
 // them under outDir and recording each release's merged values path in
 // p.Releases[...].ValuesFile. Datasource references resolve relative to baseDir.
 //
-// Values precedence (lowest first): global cfg.Values, then the release's own
-// Values; documents are deep-merged so later sources win.
+// Global values/labels are applied earlier via confijer type-defaults, so each
+// release's Values already carry any inherited defaults.
 func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, outDir string, logger *zap.Logger) error {
 	res := datasource.NewResolver(baseDir)
 	valuesDir := filepath.Join(outDir, plan.ValuesDir)
@@ -40,7 +40,7 @@ func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, o
 		rc := cfg.Releases[key]
 		log := logger.With(zap.String("release", key))
 
-		if err := resolveValues(ctx, res, cfg, rc, key, p, valuesDir, log); err != nil {
+		if err := resolveValues(ctx, res, rc, key, p, valuesDir, log); err != nil {
 			return err
 		}
 		if err := resolveStore(ctx, res, rc, key, storeDir, log); err != nil {
@@ -50,14 +50,10 @@ func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, o
 	return nil
 }
 
-func resolveValues(ctx context.Context, res *datasource.Resolver, cfg *config.Config, rc config.Release, key string, p *plan.Plan, valuesDir string, log *zap.Logger) error {
-	refs := make([]config.FileRef, 0, len(cfg.Values)+len(rc.Values))
-	refs = append(refs, cfg.Values...) // global (lowest precedence)
-	refs = append(refs, rc.Values...)  // per-release (overrides)
-
+func resolveValues(ctx context.Context, res *datasource.Resolver, rc config.Release, key string, p *plan.Plan, valuesDir string, log *zap.Logger) error {
 	relDir := filepath.Join(valuesDir, sanitize(key))
 	var files []string
-	for _, ref := range refs {
+	for _, ref := range rc.Values {
 		data, err := res.Resolve(ctx, ref.Src)
 		if err != nil {
 			if ref.Optional && isMissing(err) {

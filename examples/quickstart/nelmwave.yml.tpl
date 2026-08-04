@@ -14,13 +14,14 @@ repositories:
     username: [[ getenv "REGISTRY_USER" "anonymous" ]]
     password: [[ getenv "REGISTRY_PASS" "" ]]
 
-# Global values: merged beneath every release's own values (lowest precedence).
-values:
-  - values/common.yml
-
-# Global labels: merged into every release's labels (a release's own label wins).
-labels:
-  common: true
+# Defaults for every release via confijer type-defaults ("Release" = the Go type).
+# Labels deep-merge into each release (a release's own label wins); values act as
+# a default used only when a release declares none of its own.
+Release:
+  labels:
+    common: true
+  values:
+    - values/common.yml
 
 releases:
   postgres@data:

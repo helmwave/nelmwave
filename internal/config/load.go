@@ -41,27 +41,7 @@ func Parse(data []byte) (*Config, error) {
 	if err := cfg.canonicalizeUniqnames(); err != nil {
 		return nil, err
 	}
-	cfg.applyGlobalLabels()
 	return &cfg, nil
-}
-
-// applyGlobalLabels merges Config.Labels into every release's labels; a
-// release's own label wins on a key clash.
-func (c *Config) applyGlobalLabels() {
-	if len(c.Labels) == 0 {
-		return
-	}
-	for key, r := range c.Releases {
-		merged := make(map[string]string, len(c.Labels)+len(r.Labels))
-		for k, v := range c.Labels {
-			merged[k] = v
-		}
-		for k, v := range r.Labels {
-			merged[k] = v
-		}
-		r.Labels = merged
-		c.Releases[key] = r
-	}
 }
 
 // canonicalizeUniqnames normalizes every release map key and every needs entry
@@ -99,24 +79,22 @@ func (c *Config) canonicalizeUniqnames() error {
 	return nil
 }
 
-// normalizeLabels coerces label-map values to strings so bare YAML scalars
-// (true, 3, ...) are accepted where Kubernetes wants string labels. It covers
-// the global labels, each release's labels, and needs.matchLabels selectors.
-func normalizeLabels(root map[string]any) {
-	stringifyValues(root["labels"])
-
-	releases, ok := root["releases"].(map[string]any)
-	if !ok {
-		return
-	}
-	for _, rv := range releases {
-		rel, ok := rv.(map[string]any)
-		if !ok {
-			continue
+// normalizeLabels walks the whole config tree and coerces the values of every
+// "labels"/"matchLabels" map to strings, so bare YAML scalars (true, 3, ...) are
+// accepted where Kubernetes wants string labels. Walking recursively covers
+// per-release labels, needs.matchLabels, and the "Release:" type-default block.
+func normalizeLabels(node any) {
+	switch n := node.(type) {
+	case map[string]any:
+		for k, v := range n {
+			if k == "labels" || k == "matchLabels" {
+				stringifyValues(v)
+			}
+			normalizeLabels(v)
 		}
-		stringifyValues(rel["labels"])
-		if needs, ok := rel["needs"].(map[string]any); ok {
-			stringifyValues(needs["matchLabels"])
+	case []any:
+		for _, e := range n {
+			normalizeLabels(e)
 		}
 	}
 }
@@ -152,30 +130,38 @@ func normalizeRepositories(root map[string]any) {
 	}
 }
 
-// normalizeRefLists rewrites bare-string entries in the top-level values list
-// and in each release's values/store lists into {src: <string>} maps, so
+// normalizeRefLists rewrites bare-string entries in every release's values/store
+// lists (and in the "Release:" type-default block) into {src: <string>} maps, so
 // confijer decodes them into FileRef instead of dropping them.
 func normalizeRefLists(root map[string]any) {
 	if root == nil {
 		return
 	}
-	root["values"] = normalizeRefList(root["values"])
-
+	// confijer keys the type-default block by the Go type name ("Release").
+	for _, k := range []string{"Release", "release"} {
+		if rel, ok := root[k].(map[string]any); ok {
+			normalizeReleaseRefs(rel)
+		}
+	}
 	releases, ok := root["releases"].(map[string]any)
 	if !ok {
 		return
 	}
 	for _, rv := range releases {
-		rel, ok := rv.(map[string]any)
-		if !ok {
-			continue
+		if rel, ok := rv.(map[string]any); ok {
+			normalizeReleaseRefs(rel)
 		}
-		if _, has := rel["values"]; has {
-			rel["values"] = normalizeRefList(rel["values"])
-		}
-		if _, has := rel["store"]; has {
-			rel["store"] = normalizeRefList(rel["store"])
-		}
+	}
+}
+
+// normalizeReleaseRefs normalizes the values/store ref lists of one release-like
+// mapping in place.
+func normalizeReleaseRefs(rel map[string]any) {
+	if _, has := rel["values"]; has {
+		rel["values"] = normalizeRefList(rel["values"])
+	}
+	if _, has := rel["store"]; has {
+		rel["store"] = normalizeRefList(rel["store"])
 	}
 }
 
@@ -196,9 +182,6 @@ func normalizeRefList(v any) any {
 
 // canonicalizeSources rewrites every Src so equivalent spellings collapse.
 func (c *Config) canonicalizeSources() {
-	for i := range c.Values {
-		c.Values[i].Src = canonicalizeSrc(c.Values[i].Src)
-	}
 	for name, r := range c.Releases {
 		for i := range r.Values {
 			r.Values[i].Src = canonicalizeSrc(r.Values[i].Src)
