@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -241,6 +242,29 @@ func checkStrictNeeds(p *plan.Plan, active map[string]struct{}, logger *zap.Logg
 	return nil
 }
 
+// setJSONArgs converts a sets map into nelm's "key=json" overrides, JSON-encoding
+// each value so its YAML type is preserved. Keys are emitted in sorted order for
+// determinism.
+func setJSONArgs(sets map[string]any) ([]string, error) {
+	if len(sets) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(sets))
+	for k := range sets {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	args := make([]string, 0, len(keys))
+	for _, k := range keys {
+		v, err := json.Marshal(sets[k])
+		if err != nil {
+			return nil, fmt.Errorf("set %q: %w", k, err)
+		}
+		args = append(args, k+"="+string(v))
+	}
+	return args, nil
+}
+
 // setupRegistryConfig generates a Docker config.json for OCI repositories that
 // carry credentials and records its path on o; the returned func removes it.
 func (o *deployOptions) setupRegistryConfig(p *plan.Plan) (func(), error) {
@@ -282,6 +306,11 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 
 	chart := repo.Resolve(rel.Chart.Name, repos)
 
+	setJSON, err := setJSONArgs(rel.Sets)
+	if err != nil {
+		return release.Spec{}, fmt.Errorf("release %q: %w", key, err)
+	}
+
 	return release.Spec{
 		Name:               id.Name,
 		Namespace:          namespace,
@@ -290,7 +319,7 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 		Chart:              chart.Ref,
 		ChartVersion:       rel.Chart.Version,
 		ValuesFiles:        valuesFiles,
-		Sets:               rel.Sets,
+		SetJSON:            setJSON,
 		Timeout:            timeout,
 		CreateNamespace:    rel.Options.CreateNamespace,
 		AutoRollback:       rel.Options.AutoRollback,

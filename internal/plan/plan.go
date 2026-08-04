@@ -50,7 +50,7 @@ type Release struct {
 	Needs   []Need                `yaml:"needs,omitempty"`
 	Chart   config.Chart          `yaml:"chart,omitempty"`
 	Values  []config.FileRef      `yaml:"values,omitempty"`
-	Sets    []string              `yaml:"sets,omitempty"`
+	Sets    map[string]any        `yaml:"sets,omitempty"`
 	Store   []config.FileRef      `yaml:"store,omitempty"`
 	Options config.ReleaseOptions `yaml:"options"`
 

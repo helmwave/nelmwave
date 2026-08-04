@@ -31,7 +31,7 @@ func (f *fakeApplier) Install(_ context.Context, s release.Spec) error {
 	if f.sets == nil {
 		f.sets = map[string][]string{}
 	}
-	f.sets[s.Name] = s.Sets
+	f.sets[s.Name] = s.SetJSON
 	return f.fail[s.Name]
 }
 
@@ -173,13 +173,13 @@ func TestDiff_DetailedExitCodeNoChanges(t *testing.T) {
 	}
 }
 
-func TestDeploy_PassesSetsToApplier(t *testing.T) {
+func TestDeploy_PassesSetsToApplierAsTypedJSON(t *testing.T) {
 	p := &plan.Plan{
 		Releases: map[string]plan.Release{
 			"a@ns": {
 				Labels: map[string]string{"app": "a"},
 				Chart:  config.Chart{Name: "r/a"},
-				Sets:   []string{"image.tag=1.2.3", "replicaCount=3"},
+				Sets:   map[string]any{"image.tag": "1.2.3", "replicaCount": 3},
 			},
 		},
 	}
@@ -187,8 +187,9 @@ func TestDeploy_PassesSetsToApplier(t *testing.T) {
 	if err := deploy(context.Background(), zap.NewNop(), p, opts("", false), f, opInstall); err != nil {
 		t.Fatalf("deploy: %v", err)
 	}
+	// Sorted keys, JSON-encoded values: string stays quoted, int stays a number.
 	got := f.sets["a"]
-	if len(got) != 2 || got[0] != "image.tag=1.2.3" || got[1] != "replicaCount=3" {
-		t.Errorf("sets passed to applier = %v", got)
+	if len(got) != 2 || got[0] != `image.tag="1.2.3"` || got[1] != "replicaCount=3" {
+		t.Errorf("set JSON args = %v", got)
 	}
 }

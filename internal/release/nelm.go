@@ -48,7 +48,7 @@ func (NelmApplier) Install(ctx context.Context, s Spec) error {
 		RegistryCredentialsPath: s.RegistryConfigPath,
 	}
 	opts.ValuesFiles = s.ValuesFiles
-	opts.ValuesSet = s.Sets
+	opts.ValuesSetJSON = s.SetJSON
 	opts.KubeConfigPaths = kubeConfigPaths(s.KubeConfig)
 	opts.KubeContextCurrent = s.KubeContext
 	applyRepo(&opts.ChartRepoConnectionOptions, s)
@@ -78,7 +78,7 @@ func (NelmApplier) Plan(ctx context.Context, s Spec, errorIfChanges bool) (bool,
 		RegistryCredentialsPath: s.RegistryConfigPath,
 	}
 	opts.ValuesFiles = s.ValuesFiles
-	opts.ValuesSet = s.Sets
+	opts.ValuesSetJSON = s.SetJSON
 	opts.KubeConfigPaths = kubeConfigPaths(s.KubeConfig)
 	opts.KubeContextCurrent = s.KubeContext
 	applyRepo(&opts.ChartRepoConnectionOptions, s)
