@@ -3,11 +3,13 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/helmwave/nelmwave/internal/config"
 	"github.com/helmwave/nelmwave/internal/plan"
@@ -52,8 +54,8 @@ func (f *fakeApplier) Plan(_ context.Context, s release.Spec, errorIfChanges boo
 	return errorIfChanges && f.changes[s.Name], nil
 }
 
-// a@ns (no needs) and b@ns (needs a@ns, optionally strict).
-func testPlan(strict bool) *plan.Plan {
+// a@ns (no needs) and b@ns (needs a@ns, required or optional).
+func testPlan(optional bool) *plan.Plan {
 	return &plan.Plan{
 		Releases: map[string]plan.Release{
 			"a@ns": {
@@ -62,7 +64,7 @@ func testPlan(strict bool) *plan.Plan {
 			},
 			"b@ns": {
 				Labels: map[string]string{"app": "b"},
-				Needs:  []plan.Need{{Uniqname: "a@ns", Strict: strict}},
+				Needs:  []plan.Need{{Uniqname: "a@ns", Optional: optional}},
 				Chart:  config.Chart{Name: "r/b"},
 			},
 		},
@@ -108,12 +110,13 @@ func TestDeploy_SelectorFiltersReleases(t *testing.T) {
 	}
 }
 
-func TestDeploy_StrictNeedOutsideSelectionErrors(t *testing.T) {
+func TestDeploy_RequiredNeedOutsideSelectionErrors(t *testing.T) {
 	f := &fakeApplier{}
-	// Select only b, which strictly needs a (filtered out).
-	err := deploy(context.Background(), zap.NewNop(), testPlan(true), opts("app=b", false), f, opInstall)
+	// Select only b, which requires a (filtered out). Required is the default,
+	// so this is what an unannotated dependency does.
+	err := deploy(context.Background(), zap.NewNop(), testPlan(false), opts("app=b", false), f, opInstall)
 	if err == nil {
-		t.Fatal("expected strict-need error")
+		t.Fatal("expected an unsatisfied-need error")
 	}
 	if len(f.installed) != 0 {
 		t.Errorf("nothing should have been installed, got %v", f.installed)
@@ -123,11 +126,61 @@ func TestDeploy_StrictNeedOutsideSelectionErrors(t *testing.T) {
 func TestDeploy_IncludeNeedsPullsInDependency(t *testing.T) {
 	f := &fakeApplier{}
 	// Select only b, but --include-needs pulls a back in.
-	if err := deploy(context.Background(), zap.NewNop(), testPlan(true), opts("app=b", true), f, opInstall); err != nil {
+	if err := deploy(context.Background(), zap.NewNop(), testPlan(false), opts("app=b", true), f, opInstall); err != nil {
 		t.Fatalf("deploy: %v", err)
 	}
 	if len(f.installed) != 2 || slices.Index(f.installed, "a") > slices.Index(f.installed, "b") {
 		t.Errorf("installed = %v, want a then b", f.installed)
+	}
+}
+
+func TestDeploy_IncludeNeedsPullsInDependentsOnUninstall(t *testing.T) {
+	f := &fakeApplier{}
+	// Select only a, the dependency. On uninstall the flag travels the other
+	// way: b depends on a, so b must go too — and go first.
+	if err := deploy(context.Background(), zap.NewNop(), testPlan(false), opts("app=a", true), f, opUninstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	if len(f.uninstalled) != 2 {
+		t.Fatalf("uninstalled = %v, want both releases", f.uninstalled)
+	}
+	if slices.Index(f.uninstalled, "b") > slices.Index(f.uninstalled, "a") {
+		t.Errorf("uninstalled = %v, want b (the dependent) before a", f.uninstalled)
+	}
+}
+
+func TestDeploy_UninstallWithoutFlagLeavesDependentsAlone(t *testing.T) {
+	f := &fakeApplier{}
+	// The same selection without the flag removes exactly what was asked for.
+	if err := deploy(context.Background(), zap.NewNop(), testPlan(false), opts("app=a", false), f, opUninstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	if len(f.uninstalled) != 1 || f.uninstalled[0] != "a" {
+		t.Errorf("uninstalled = %v, want [a]", f.uninstalled)
+	}
+}
+
+func TestDiff_IncludeNeedsWidensTheSelection(t *testing.T) {
+	f := &fakeApplier{}
+	// Planning only b would cover one release; with the flag its dependency a
+	// is planned too.
+	if err := diffReleases(context.Background(), zap.NewNop(), testPlan(false), opts("app=b", true), false, f); err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	if len(f.planned) != 2 {
+		t.Errorf("planned = %v, want both b and its dependency a", f.planned)
+	}
+}
+
+func TestDeploy_OptionalNeedOutsideSelectionIsDropped(t *testing.T) {
+	f := &fakeApplier{}
+	// Select only b, whose need on a is optional: the edge is dropped and the
+	// run proceeds, where a required need would have failed.
+	if err := deploy(context.Background(), zap.NewNop(), testPlan(true), opts("app=b", false), f, opInstall); err != nil {
+		t.Fatalf("optional need outside the selection should not fail: %v", err)
+	}
+	if len(f.installed) != 1 || f.installed[0] != "b" {
+		t.Errorf("installed = %v, want [b]", f.installed)
 	}
 }
 
@@ -218,5 +271,40 @@ func TestSetJSONArgs_NestedMapsAndTypes(t *testing.T) {
 		if args[i] != want[i] {
 			t.Errorf("arg[%d] = %q, want %q", i, args[i], want[i])
 		}
+	}
+}
+
+func TestLogSelection_FlagsWhatTheSelectorDidNotName(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	selected := []string{"a@ns"}
+	active := map[string]struct{}{"a@ns": {}, "b@ns": {}}
+
+	logSelection(zap.New(core), "uninstall", selected, active)
+
+	entries := logs.All()
+	if len(entries) != 2 {
+		t.Fatalf("want a selection line plus a pulled-in warning, got %d entries", len(entries))
+	}
+	if entries[0].Message != "uninstall selection" {
+		t.Errorf("first entry = %q", entries[0].Message)
+	}
+	// The widening must be a warning, not buried at info level.
+	if entries[1].Level != zap.WarnLevel {
+		t.Errorf("pulled-in entry level = %v, want warn", entries[1].Level)
+	}
+	// zap.Strings lands in ContextMap as []interface{}, so compare rendered.
+	if got := fmt.Sprint(entries[1].ContextMap()["releases"]); got != "[b@ns]" {
+		t.Errorf("pulled-in releases = %s, want [b@ns]", got)
+	}
+}
+
+func TestLogSelection_QuietWhenNothingWasAdded(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	active := map[string]struct{}{"a@ns": {}}
+
+	logSelection(zap.New(core), "install", []string{"a@ns"}, active)
+
+	if n := logs.Len(); n != 1 {
+		t.Errorf("want only the selection line when nothing was pulled in, got %d entries", n)
 	}
 }

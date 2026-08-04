@@ -40,10 +40,10 @@ type Plan struct {
 }
 
 // Need is one resolved dependency edge of a plan release: the target uniqname
-// and whether the dependency is strict.
+// and whether the dependency is optional (droppable when filtered out).
 type Need struct {
 	Uniqname string `yaml:"uniqname"`
-	Strict   bool   `yaml:"strict,omitempty"`
+	Optional bool   `yaml:"optional,omitempty"`
 }
 
 // Release is a plan entry for a single release, keyed by its uniqname
@@ -95,7 +95,7 @@ func resolveNeeds(cfg *config.Config, name string, r config.Release) []Need {
 	}
 	needs := make([]Need, len(resolved))
 	for i, n := range resolved {
-		needs[i] = Need{Uniqname: n.Uniqname, Strict: n.Strict}
+		needs[i] = Need{Uniqname: n.Uniqname, Optional: n.Optional}
 	}
 	return needs
 }

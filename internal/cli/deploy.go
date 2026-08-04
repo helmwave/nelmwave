@@ -60,15 +60,27 @@ func deploy(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deployOptio
 		return nil
 	}
 
-	// Needs policy applies to install only: --include-needs pulls filtered-out
-	// dependencies back in; otherwise an unsatisfied strict need is an error.
-	if op == opInstall {
-		if o.includeNeeds {
-			expandNeeds(p, active)
-		} else if err := checkStrictNeeds(p, active, logger); err != nil {
+	// Remembered before the selection is widened, so the log can say which
+	// releases the selector actually named and which the flag dragged in.
+	selected := keysOf(active)
+
+	// --include-needs widens the selection along the dependency graph, in the
+	// direction the operation travels: install pulls in what the selection needs,
+	// uninstall pulls in what needs the selection. Without it, install rejects an
+	// unsatisfied required need, while uninstall proceeds — narrowing a teardown
+	// is a legitimate thing to want.
+	switch {
+	case o.includeNeeds && op == opInstall:
+		expandNeeds(p, active)
+	case o.includeNeeds && op == opUninstall:
+		expandDependents(p, active)
+	case op == opInstall:
+		if err := checkRequiredNeeds(p, active, logger); err != nil {
 			return err
 		}
 	}
+
+	logSelection(logger, op.verb(), selected, active)
 
 	deps := buildEdges(p, active)
 	if op == opUninstall {
@@ -135,6 +147,17 @@ func diffReleases(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deplo
 		logger.Warn("no releases match the selector", zap.String("selector", o.selector))
 		return nil
 	}
+
+	selected := keysOf(active)
+
+	// Same widening as up, so `diff --include-needs` previews exactly the set
+	// `up --include-needs` would apply. No policy check: planning changes
+	// nothing, so an unsatisfied need is not a reason to refuse.
+	if o.includeNeeds {
+		expandNeeds(p, active)
+	}
+
+	logSelection(logger, "plan", selected, active)
 
 	deps := buildEdges(p, active)
 	absOut, err := filepath.Abs(o.output)
@@ -217,26 +240,97 @@ func expandNeeds(p *plan.Plan, active map[string]struct{}) {
 	}
 }
 
-// checkStrictNeeds fails if any active release has a strict need outside the
-// selection; non-strict needs outside the selection are dropped with a warning.
-func checkStrictNeeds(p *plan.Plan, active map[string]struct{}, logger *zap.Logger) error {
+// logSelection reports what the run is about to touch, before it touches it.
+// Releases the selector did not name are called out separately: --include-needs
+// can widen a selection well past what was typed, and on uninstall that means
+// deleting releases the user never listed.
+func logSelection(logger *zap.Logger, verb string, selected []string, active map[string]struct{}) {
+	final := keysOf(active)
+	added := make([]string, 0, len(final)-len(selected))
+	named := make(map[string]struct{}, len(selected))
+	for _, k := range selected {
+		named[k] = struct{}{}
+	}
+	for _, k := range final {
+		if _, ok := named[k]; !ok {
+			added = append(added, k)
+		}
+	}
+
+	logger.Info(verb+" selection",
+		zap.Int("count", len(final)),
+		zap.Strings("releases", final))
+	if len(added) > 0 {
+		// Warn, not info: on uninstall these are deletions nobody asked for by
+		// name, and on install they are extra releases about to be rolled out.
+		logger.Warn("pulled in by --include-needs",
+			zap.Int("count", len(added)),
+			zap.Strings("releases", added))
+	}
+}
+
+// keysOf returns a set's keys in sorted order, for deterministic output.
+func keysOf(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// expandDependents adds every transitive dependent of the active set into it:
+// the releases that need an active one, then the releases that need those. It is
+// the uninstall counterpart of expandNeeds — removing a release without its
+// dependents would leave them running against something that is gone.
+func expandDependents(p *plan.Plan, active map[string]struct{}) {
+	// Reverse the edges once: needs point from dependent to dependency, and here
+	// we walk the other way.
+	dependents := make(map[string][]string, len(p.Releases))
+	for key, rel := range p.Releases {
+		for _, n := range rel.Needs {
+			dependents[n.Uniqname] = append(dependents[n.Uniqname], key)
+		}
+	}
+
+	queue := make([]string, 0, len(active))
+	for k := range active {
+		queue = append(queue, k)
+	}
+	for len(queue) > 0 {
+		k := queue[0]
+		queue = queue[1:]
+		for _, dep := range dependents[k] {
+			if _, ok := active[dep]; ok {
+				continue
+			}
+			active[dep] = struct{}{}
+			queue = append(queue, dep)
+		}
+	}
+}
+
+// checkRequiredNeeds fails if any active release has a required need outside the
+// selection; optional needs outside the selection are dropped with a warning.
+func checkRequiredNeeds(p *plan.Plan, active map[string]struct{}, logger *zap.Logger) error {
 	var unmet []string
 	for key := range active {
 		for _, n := range p.Releases[key].Needs {
 			if _, ok := active[n.Uniqname]; ok {
 				continue
 			}
-			if n.Strict {
-				unmet = append(unmet, fmt.Sprintf("release %q strictly needs %q", key, n.Uniqname))
-			} else {
-				logger.Warn("need outside selection dropped",
+			if n.Optional {
+				logger.Warn("optional need outside selection dropped",
 					zap.String("release", key), zap.String("need", n.Uniqname))
+			} else {
+				unmet = append(unmet, fmt.Sprintf("release %q needs %q", key, n.Uniqname))
 			}
 		}
 	}
 	if len(unmet) > 0 {
 		sort.Strings(unmet)
-		return fmt.Errorf("unsatisfied strict needs (use --include-needs to pull them in):\n  %s",
+		return fmt.Errorf("unsatisfied needs outside the selection "+
+			"(use --include-needs to pull them in, or mark them optional):\n  %s",
 			strings.Join(unmet, "\n  "))
 	}
 	return nil

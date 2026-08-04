@@ -25,8 +25,8 @@ type FileRef struct {
 	// Name names the resolved artifact file under .nelmwave/ (values or store).
 	// Empty means nelmwave derives an index-prefixed basename automatically.
 	Name string `json:"name" yaml:"name,omitempty"`
-	// Optional: a missing source is skipped instead of failing.
+	// Optional skips a source that does not exist instead of failing the build.
+	// It covers "the file is not there" (os.ErrNotExist) — a datasource that
+	// exists but errors (HTTP 500, a broken template) still fails.
 	Optional bool `json:"optional" yaml:"optional,omitempty"`
-	// Strict: fail loudly on any resolution warning.
-	Strict bool `json:"strict" yaml:"strict,omitempty"`
 }

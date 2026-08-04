@@ -70,7 +70,7 @@ releases:
     labels: { app: api, tier: backend }
     needs:
       releases:
-        postgres@data: { strict: true }
+        postgres@data: {}
     chart:
       name: oci://registry.example.com/charts/api
       version: 1.4.2
@@ -177,8 +177,7 @@ values:
 |---|---|
 | `src` | Local path, or a URL with any gomplate datasource scheme (`env:`, `http(s)://`, `s3://`, `git://`, `vault://`, ...). |
 | `name` | Names the resolved artifact under `.nelmwave/`. Default: an index-prefixed basename (`00-pg.yml`). |
-| `optional` | A missing source is skipped instead of failing. |
-| `strict` | Fail loudly on any resolution warning. |
+| `optional` | A source that does not exist is skipped instead of failing the build. A source that exists but errors still fails. |
 
 **Behaviour is chosen by extension**, not by scheme:
 
@@ -236,16 +235,24 @@ Dependency edges. All parts combine: a release waits for every release named in
 ```yaml
 needs:
   releases:
-    postgres@data: { strict: true }
+    postgres@data: {}                 # required (the default)
+    metrics@obs: { optional: true }    # nice to have
   matchLabels:
     tier: db
   matchLabelsExpressions:
     - { key: env, operator: In, values: [prod, stg] }
 ```
 
-`strict` decides what happens when the dependency is filtered out of the current
-selection: a strict need is an error, a non-strict one is dropped with a warning.
-`up --include-needs` pulls filtered-out dependencies back into the run.
+`optional` decides what happens when the dependency is filtered out of the
+current selection. **A declared dependency is required by default**: selecting
+the dependent release without it is an error. Marking it `optional: true` drops
+the edge with a warning instead. [`up --include-needs`](#--include-needs) pulls
+filtered-out dependencies back into the run either way.
+
+Label-matched dependencies are always optional — a selector casts a wide net,
+and failing because it happened to catch a filtered-out release would be
+surprising. When a release is named explicitly *and* matched by the selector,
+the explicit entry decides.
 
 An empty label selector adds no dependencies — it does **not** match everything.
 Cycles are rejected at build time, with the cycle printed.
@@ -327,8 +334,8 @@ Global flags: `--log-level` (debug/info/warn/error), `--log-format`
 (auto/console/json), `--kube-context`, `--kube-config`, `--version`.
 
 Common command flags: `-l/--selector`, `--concurrency`, `--output`,
-`--file` (build, `up --build`), `--include-needs` and `--dry-run` (up),
-`--detailed-exitcode` (diff).
+`--include-needs` (up, down, diff), `--file` (build, `up --build`),
+`--dry-run` (up), `--detailed-exitcode` (diff).
 
 `--log-format auto` picks console output on a TTY and JSON everywhere else, so
 CI logs stay machine-readable without a flag.
@@ -346,6 +353,33 @@ at once. A failure stops that branch of the graph — dependents are skipped,
 unrelated branches keep going. `down` reverses the edges, so dependents are
 removed before what they depend on.
 
+#### `--include-needs`
+
+Widens the selection along the dependency graph — **in the direction the command
+travels**, which is not the same direction for every command:
+
+| Command | Pulls in | Example |
+|---|---|---|
+| `up` | what the selection depends on | `up -l 'app=api' --include-needs` also installs `postgres` |
+| `diff` | same as `up`, so the preview matches the apply | `diff -l 'app=api' --include-needs` also plans `postgres` |
+| `down` | what depends on the selection | `down -l 'app=postgres' --include-needs` also removes `api` |
+
+The inversion for `down` is deliberate: a teardown that pulled in dependencies
+would delete *more* than you selected and leave the survivors broken, while
+pulling in dependents removes exactly the things that would otherwise be left
+pointing at something gone.
+
+Without the flag, `up` refuses to run when a required dependency is filtered out
+(see [`needs`](#needs)), while `down` and `diff` simply act on what you selected.
+
+Every run logs the final selection before touching anything, and anything the
+selector did not name is called out as a warning:
+
+```
+INFO   uninstall selection          {"count": 3, "releases": ["api@app", "cache@app", "postgres@data"]}
+WARN   pulled in by --include-needs {"count": 2, "releases": ["api@app", "cache@app"]}
+```
+
 ### Exit codes
 
 | Code | Meaning |
@@ -355,6 +389,47 @@ removed before what they depend on.
 | `2` | `diff --detailed-exitcode` only: changes are planned |
 
 ---
+
+## Tests
+
+```sh
+make test     # unit tests, no cluster needed
+make lint     # golangci-lint, config pinned in .golangci.yml
+make e2e      # end-to-end: start a cluster, run the suite, tear it down
+```
+
+The end-to-end suite ([`test/e2e`](./test/e2e)) drives the real command tree
+against a real Kubernetes API: build, up, a clean diff, a drifting diff with
+exit code 2, the upgrade that resolves it, a selective down, a full down, and
+the needs policy. It installs a local chart from `testdata`, so nothing
+is downloaded and every assertion is about nelmwave's own behaviour.
+
+The cluster is a k3s container owned by docker-compose, which keeps the fixture
+in one file. To iterate without restarting it:
+
+```sh
+make e2e-up      # start k3s, wait for its healthcheck
+make e2e-test    # run the suite (repeatable)
+make e2e-down    # remove the container and its volumes
+```
+
+The suite is behind the `e2e` build tag, so `go test ./...` never reaches for a
+cluster.
+
+> **Using podman?** Point compose at its socket first:
+> `export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"`.
+> Rootless podman additionally needs the `cpuset` controller delegated —
+> without it k3s exits with `failed to find cpuset cgroup (v2)`:
+>
+> ```sh
+> podman machine ssh 'sudo sh -c "printf \"[Service]\nDelegate=memory pids cpu io cpuset\n\" \
+>   > /etc/systemd/system/user@.service.d/delegate.conf"'
+> podman machine stop && podman machine start
+> ```
+>
+> The remaining rootless workarounds (masking `/dev/kmsg`, nesting the cgroup,
+> `KubeletInUserNamespace`) are already part of `docker-compose.yml` and are
+> no-ops under a rootful runtime.
 
 ## Not supported
 

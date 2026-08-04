@@ -33,8 +33,9 @@ applied in parallel; --concurrency bounds how many run at once. A failure stops
 that branch of the graph — releases that depend on the failed one are skipped,
 unrelated branches keep going.
 
-Dependencies outside the selection: a strict need is an error, a non-strict one
-is dropped with a warning, and --include-needs pulls both back into the run.`,
+Dependencies outside the selection: a required need (the default) is an error,
+one marked optional is dropped with a warning, and --include-needs pulls both
+back into the run.`,
 		Example: `  # Deploy everything
   nelmwave up
 

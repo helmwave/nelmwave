@@ -99,14 +99,14 @@ releases:
   api@app:
     needs:
       releases:
-        db@data: { strict: true }
+        db@data: { optional: true }
     chart: { name: oci://r/api }
 `)
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("expected valid, got: %v", err)
 	}
-	if !cfg.Releases["api@app"].Needs.Releases["db@data"].Strict {
-		t.Errorf("strict flag not parsed on needs.releases")
+	if !cfg.Releases["api@app"].Needs.Releases["db@data"].Optional {
+		t.Errorf("optional flag not parsed on needs.releases")
 	}
 }
 

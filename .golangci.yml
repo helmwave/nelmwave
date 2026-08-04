@@ -1,5 +1,11 @@
 version: "2"
 
+run:
+  # Without this the e2e suite is invisible to the linter (it is behind a build
+  # tag), and dead code there would only surface on a cluster run.
+  build-tags:
+    - e2e
+
 # Keeps `golangci-lint run ./...` reproducible across machines: the milestone
 # checklist requires a clean linter run, so the enabled set is pinned here
 # rather than left to whatever the local default happens to be.

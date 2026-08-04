@@ -1,6 +1,9 @@
 # nelmwave build artifacts (anywhere, incl. examples/)
 .nelmwave/
 
+# kubeconfig written by the e2e docker-compose fixture
+test/e2e/.kube/
+
 # compiled binary
 /nelmwave
 /dist/

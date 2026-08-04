@@ -11,6 +11,7 @@ require (
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.29.3
+	k8s.io/client-go v0.36.2
 )
 
 require (
@@ -302,7 +303,6 @@ require (
 	k8s.io/apiextensions-apiserver v0.29.0 // indirect
 	k8s.io/apiserver v0.29.2 // indirect
 	k8s.io/cli-runtime v0.29.3 // indirect
-	k8s.io/client-go v0.36.2 // indirect
 	k8s.io/component-base v0.29.3 // indirect
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect

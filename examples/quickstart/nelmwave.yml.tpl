@@ -44,7 +44,8 @@ releases:
     needs:
       releases:
         postgres@data:
-          strict: true          # fail if this dependency is filtered out
+          optional: true        # tolerate this dependency being filtered out
+                                # (without it, a filtered-out need is an error)
     chart:
       name: oci://registry.example.com/charts/api
       version: 1.4.2

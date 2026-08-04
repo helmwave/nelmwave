@@ -14,6 +14,7 @@ type diffOptions struct {
 	output           string
 	selector         string
 	concurrency      int
+	includeNeeds     bool
 	detailedExitCode bool
 }
 
@@ -28,6 +29,10 @@ func newDiffCommand(g *globalOptions) *cobra.Command {
 diff reads the plan written by build and asks nelm to plan each selected
 release. Releases are planned in parallel, bounded by --concurrency; unlike up,
 the dependency graph only orders the output, since nothing is applied.
+
+--include-needs widens the selection to what it depends on, exactly as it does
+for up, so the preview covers the same set the apply would. Planning changes
+nothing, so an unsatisfied dependency is never an error here — it is one for up.
 
 Exit codes:
 
@@ -53,6 +58,7 @@ CI job can gate on drift without parsing output.`,
 	f.StringVarP(&o.selector, "selector", "l", "", "k8s-style label selector to filter releases")
 	f.IntVar(&o.concurrency, "concurrency", 0, "max releases to plan in parallel (0 = unlimited)")
 	f.StringVar(&o.output, "output", plan.DefaultDir, "directory of the built plan")
+	f.BoolVar(&o.includeNeeds, "include-needs", false, "also plan the releases the selection depends on")
 	f.BoolVar(&o.detailedExitCode, "detailed-exitcode", false, "exit with code 2 when changes are planned")
 	return cmd
 }
@@ -67,10 +73,11 @@ func runDiff(cmd *cobra.Command, g *globalOptions, o *diffOptions) error {
 	}
 
 	return diffReleases(ctx, logger, p, deployOptions{
-		output:      o.output,
-		selector:    o.selector,
-		concurrency: o.concurrency,
-		kubeContext: g.kubeContext,
-		kubeConfig:  g.kubeConfig,
+		output:       o.output,
+		selector:     o.selector,
+		concurrency:  o.concurrency,
+		includeNeeds: o.includeNeeds,
+		kubeContext:  g.kubeContext,
+		kubeConfig:   g.kubeConfig,
 	}, o.detailedExitCode, release.NelmApplier{})
 }

@@ -16,7 +16,7 @@ import (
 type Needs struct {
 	// Releases lists explicit dependencies keyed by uniqname
 	// ("name[@namespace[@kubecontext]]"). The value carries per-dependency
-	// options (currently Strict); it is a struct so more can be added.
+	// options (currently Optional); it is a struct so more can be added.
 	Releases map[string]NeedRelease `json:"releases" yaml:"releases,omitempty"`
 	// MatchLabels selects dependency releases by exact label match.
 	MatchLabels map[string]string `json:"matchLabels" yaml:"matchLabels,omitempty"`
@@ -27,9 +27,11 @@ type Needs struct {
 
 // NeedRelease holds options for a single explicit release dependency.
 type NeedRelease struct {
-	// Strict fails the dependent release if this dependency is missing from the
-	// selected set instead of silently ignoring it. (Enforced from M3 onwards.)
-	Strict bool `json:"strict" yaml:"strict,omitempty"`
+	// Optional lets the run proceed when this dependency is filtered out of the
+	// selection: the edge is dropped with a warning instead of failing. By
+	// default a declared dependency is required, matching what `optional` means
+	// for values and stores.
+	Optional bool `json:"optional" yaml:"optional,omitempty"`
 }
 
 // LabelSelectorRequirement is one matchLabelsExpressions entry (same shape as
@@ -99,24 +101,32 @@ func selectorOperator(op string) (selection.Operator, error) {
 }
 
 // ResolvedNeed is one resolved dependency edge: the target release uniqname and
-// whether the dependency is strict (see NeedRelease.Strict). Label-matched
-// dependencies are never strict.
+// whether the dependency is optional (see NeedRelease.Optional). Label-matched
+// dependencies are always optional — a selector casts a wide net, and failing
+// because it happened to catch a filtered-out release would be surprising.
 type ResolvedNeed struct {
 	Uniqname string
-	Strict   bool
+	Optional bool
 }
 
 // ResolveNeeds resolves the concrete dependency edges of release `self` (body
-// r): explicit Releases that exist in the config (carrying their Strict flag)
-// plus releases matched by the inlined label selector (never strict). Self is
-// excluded; the result is sorted by uniqname and deduplicated, with strict
-// winning when a target appears both ways. It errors on an invalid selector.
+// r): explicit Releases that exist in the config (carrying their Optional flag)
+// plus releases matched by the inlined label selector (always optional). Self is
+// excluded; the result is sorted by uniqname and deduplicated, with the
+// required side winning when a target appears both ways. It errors on an
+// invalid selector.
 func (c *Config) ResolveNeeds(self string, r Release) ([]ResolvedNeed, error) {
-	strict := make(map[string]bool)
+	optional := make(map[string]bool)
 	for need, opt := range r.Needs.Releases {
 		if need != self {
 			if _, ok := c.Releases[need]; ok {
-				strict[need] = strict[need] || opt.Strict
+				// Key canonicalization can fold two spellings onto one uniqname,
+				// so a repeat must not relax an already-required edge.
+				if prev, seen := optional[need]; seen {
+					optional[need] = prev && opt.Optional
+				} else {
+					optional[need] = opt.Optional
+				}
 			}
 		}
 	}
@@ -127,21 +137,23 @@ func (c *Config) ResolveNeeds(self string, r Release) ([]ResolvedNeed, error) {
 		}
 		for key, other := range c.Releases {
 			if key != self && other.Matches(sel) {
-				if _, ok := strict[key]; !ok {
-					strict[key] = false
+				// An explicit entry already decided this edge; a label match only
+				// adds edges nobody named.
+				if _, ok := optional[key]; !ok {
+					optional[key] = true
 				}
 			}
 		}
 	}
 
-	keys := make([]string, 0, len(strict))
-	for k := range strict {
+	keys := make([]string, 0, len(optional))
+	for k := range optional {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	out := make([]ResolvedNeed, len(keys))
 	for i, k := range keys {
-		out[i] = ResolvedNeed{Uniqname: k, Strict: strict[k]}
+		out[i] = ResolvedNeed{Uniqname: k, Optional: optional[k]}
 	}
 	return out, nil
 }

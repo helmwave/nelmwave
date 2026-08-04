@@ -133,6 +133,22 @@ func Execute() int {
 	return 0
 }
 
+// ExitCode maps an error returned by a command to the exit code Execute would
+// report for it: 0 for nil, the carried code for a signalling error (2 from
+// diff --detailed-exitcode), 1 for anything else. Callers embedding the command
+// tree — the end-to-end suite, or another binary — need this to tell "changes
+// are planned" apart from "the command failed".
+func ExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var ee *exitError
+	if errors.As(err, &ee) {
+		return ee.code
+	}
+	return 1
+}
+
 // exitError requests a specific process exit code without being treated as a
 // command failure.
 type exitError struct {
