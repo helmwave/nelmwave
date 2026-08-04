@@ -294,3 +294,31 @@ releases:
 		t.Fatalf("bare store form not normalized: %+v", store)
 	}
 }
+
+func TestParse_GlobalLabelsMerged(t *testing.T) {
+	cfg := mustParseValid(t, `
+labels:
+  common: true
+  team: platform
+releases:
+  a@ns:
+    labels: { app: a, team: apps }
+    chart: { name: r/a }
+  b@ns:
+    chart: { name: r/b }
+`)
+	a := cfg.Releases["a@ns"].Labels
+	if a["common"] != "true" {
+		t.Errorf("global bool label should coerce to string, got %q", a["common"])
+	}
+	if a["team"] != "apps" {
+		t.Errorf("per-release label must win, got team=%q", a["team"])
+	}
+	if a["app"] != "a" {
+		t.Errorf("own label lost, got %v", a)
+	}
+	b := cfg.Releases["b@ns"].Labels
+	if b["common"] != "true" || b["team"] != "platform" {
+		t.Errorf("release without own labels should inherit globals, got %v", b)
+	}
+}

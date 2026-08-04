@@ -24,4 +24,7 @@ type Config struct {
 	// Values are global value sources merged beneath every release's own
 	// values (lowest precedence). See the merge order in the datasource layer.
 	Values []FileRef `json:"values" yaml:"values"`
+	// Labels are global labels merged into every release's labels (a release's
+	// own label wins on a key clash). Values are strings (bare true/3 are coerced).
+	Labels map[string]string `json:"labels" yaml:"labels,omitempty"`
 }

@@ -26,6 +26,7 @@ func Parse(data []byte) (*Config, error) {
 	}
 	normalizeRefLists(raw)
 	normalizeRepositories(raw)
+	normalizeLabels(raw)
 
 	normalized, err := yaml.Marshal(raw)
 	if err != nil {
@@ -40,7 +41,27 @@ func Parse(data []byte) (*Config, error) {
 	if err := cfg.canonicalizeUniqnames(); err != nil {
 		return nil, err
 	}
+	cfg.applyGlobalLabels()
 	return &cfg, nil
+}
+
+// applyGlobalLabels merges Config.Labels into every release's labels; a
+// release's own label wins on a key clash.
+func (c *Config) applyGlobalLabels() {
+	if len(c.Labels) == 0 {
+		return
+	}
+	for key, r := range c.Releases {
+		merged := make(map[string]string, len(c.Labels)+len(r.Labels))
+		for k, v := range c.Labels {
+			merged[k] = v
+		}
+		for k, v := range r.Labels {
+			merged[k] = v
+		}
+		r.Labels = merged
+		c.Releases[key] = r
+	}
 }
 
 // canonicalizeUniqnames normalizes every release map key and every needs entry
@@ -76,6 +97,45 @@ func (c *Config) canonicalizeUniqnames() error {
 	}
 	c.Releases = canon
 	return nil
+}
+
+// normalizeLabels coerces label-map values to strings so bare YAML scalars
+// (true, 3, ...) are accepted where Kubernetes wants string labels. It covers
+// the global labels, each release's labels, and needs.matchLabels selectors.
+func normalizeLabels(root map[string]any) {
+	stringifyValues(root["labels"])
+
+	releases, ok := root["releases"].(map[string]any)
+	if !ok {
+		return
+	}
+	for _, rv := range releases {
+		rel, ok := rv.(map[string]any)
+		if !ok {
+			continue
+		}
+		stringifyValues(rel["labels"])
+		if needs, ok := rel["needs"].(map[string]any); ok {
+			stringifyValues(needs["matchLabels"])
+		}
+	}
+}
+
+// stringifyValues rewrites scalar values of a map to their string form; strings
+// and non-scalar values are left as is.
+func stringifyValues(v any) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	for k, val := range m {
+		switch val.(type) {
+		case string, nil, map[string]any, []any:
+			// leave strings and non-scalars alone
+		default:
+			m[k] = fmt.Sprintf("%v", val)
+		}
+	}
 }
 
 // normalizeRepositories rewrites bare-URL-string repository entries into

@@ -18,6 +18,10 @@ repositories:
 values:
   - values/common.yml
 
+# Global labels: merged into every release's labels (a release's own label wins).
+labels:
+  common: true
+
 releases:
   postgres@data:
     labels:
