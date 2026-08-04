@@ -14,6 +14,10 @@ repositories:
     username: [[ getenv "REGISTRY_USER" "anonymous" ]]
     password: [[ getenv "REGISTRY_PASS" "" ]]
 
+# Global values: merged beneath every release's own values (lowest precedence).
+values:
+  - values/common.yml
+
 releases:
   postgres@data:
     labels:

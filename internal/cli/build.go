@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	"github.com/helmwave/nelmwave/internal/build"
 	"github.com/helmwave/nelmwave/internal/config"
 	"github.com/helmwave/nelmwave/internal/plan"
 	"github.com/helmwave/nelmwave/internal/tpl"
@@ -71,6 +72,12 @@ func runBuild(cmd *cobra.Command, o *buildOptions) error {
 	}
 
 	p := plan.FromConfig(cfg)
+
+	// Resolve values/store datasources relative to the manifest directory.
+	if err := build.Artifacts(ctx, cfg, p, filepath.Dir(manifest), o.output, logger); err != nil {
+		return err
+	}
+
 	if err := p.Write(o.output); err != nil {
 		return err
 	}

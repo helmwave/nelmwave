@@ -161,7 +161,8 @@ github.com/helmwave/nelmwave
 │   │   ├── validate.go     # валидация + детект циклов (вкл. label-рёбра)
 │   │   └── selector.go     # k8s label selector parsing/matching
 │   ├── tpl/                # gomplate-рендер (.tpl → bytes), делимитеры [[ ]], контекст
-│   ├── datasource/         # свой резолвер поверх gomplate v5 для values и store-files
+│   ├── datasource/         # свой резолвер поверх gomplate v5 (Resolve + MergeValues)
+│   ├── build/              # оркестрация: резолв datasources → артефакты .nelmwave/
 │   ├── plan/               # planfile: сборка, сериализация в .nelmwave/, чтение
 │   ├── graph/              # DAG: needs между релизами, топосорт, параллельный проход
 │   ├── release/            # адаптер к nelm/pkg/action (install/uninstall/plan/render)
@@ -466,9 +467,12 @@ releases:
    со схемой (мапы/uniqname/FileRef/Needs), confijer-загрузка, gomplate-рендер `nelmwave.yml.tpl`
    (`[[ ]]`). Команда `build` рендерит, валидирует (обязательный chart.name, needs/циклы, labels),
    пишет `planfile.yml` в `.nelmwave/`. Тесты на парсинг/валидацию/рендер/канонизацию.
-2. **M2 — Datasources.** Собственный `internal/datasource` поверх gomplate v5 (НЕ fileref): values
-   (deep-merge, порядок) + store files, запись в `.nelmwave/values|store/`, заполнение `valuesFile`
-   в planfile. Тесты с голым путём/`file://`, `env:`, `.yml.tpl`-рендером (+ mock секрет-стора).
+2. **M2 — Datasources. ✅ Готово.** Собственный `internal/datasource` поверх gomplate v5 (НЕ
+   fileref): fetch (локальные пути напрямую, схемы через gomplate `include`) + классификация по
+   расширению (copy/`.tpl`-render/`.sops`-defer) + deep-merge values (global→release). Оркестрация
+   в `internal/build`: запись `.nelmwave/values/<uniqname>.yml` и `store/<uniqname>/<dst>`,
+   заполнение `valuesFile` в planfile. Тесты: голый путь, `env:`, `.tpl`-рендер, sops-defer,
+   optional-skip, deep-merge.
 3. **M3 — DAG + nelm up/down.** `internal/graph` (топосорт, циклы), адаптер `internal/release`
    поверх `action.ReleaseInstall/ReleaseUninstall`, параллельное исполнение, `up`/`down`.
    Селекция по labels (`-l`). Интеграционный тест на kind/локальный кластер (или мок nelm-слоя).

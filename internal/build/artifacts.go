@@ -1,0 +1,144 @@
+// Package build resolves a validated config's datasources into concrete
+// artifacts under .nelmwave/: merged per-release values and copied store files.
+// It runs during `nelmwave build`, after config validation and plan projection.
+package build
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"go.uber.org/zap"
+
+	"github.com/helmwave/nelmwave/internal/config"
+	"github.com/helmwave/nelmwave/internal/datasource"
+	"github.com/helmwave/nelmwave/internal/plan"
+)
+
+// Artifacts resolves values and store files for every release in p, writing
+// them under outDir and recording each release's merged values path in
+// p.Releases[...].ValuesFile. Datasource references resolve relative to baseDir.
+//
+// Values precedence (lowest first): global cfg.Values, then the release's own
+// Values; documents are deep-merged so later sources win.
+func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, outDir string, logger *zap.Logger) error {
+	res := datasource.NewResolver(baseDir)
+	valuesDir := filepath.Join(outDir, plan.ValuesDir)
+	storeDir := filepath.Join(outDir, plan.StoreDir)
+
+	// Start clean so removed releases/sources don't leave stale artifacts.
+	for _, dir := range []string{valuesDir, storeDir} {
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("clean %q: %w", dir, err)
+		}
+	}
+
+	for _, key := range p.ReleaseNames() {
+		rc := cfg.Releases[key]
+		log := logger.With(zap.String("release", key))
+
+		if err := resolveValues(ctx, res, cfg, rc, key, p, valuesDir, log); err != nil {
+			return err
+		}
+		if err := resolveStore(ctx, res, rc, key, storeDir, log); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolveValues(ctx context.Context, res *datasource.Resolver, cfg *config.Config, rc config.Release, key string, p *plan.Plan, valuesDir string, log *zap.Logger) error {
+	refs := make([]config.FileRef, 0, len(cfg.Values)+len(rc.Values))
+	refs = append(refs, cfg.Values...) // global (lowest precedence)
+	refs = append(refs, rc.Values...)  // per-release (overrides)
+
+	var docs [][]byte
+	for _, ref := range refs {
+		data, err := res.Resolve(ctx, ref.Src)
+		if err != nil {
+			if ref.Optional && isMissing(err) {
+				log.Warn("optional values source skipped", zap.String("src", ref.Src))
+				continue
+			}
+			return fmt.Errorf("release %q: resolve values %q: %w", key, ref.Src, err)
+		}
+		docs = append(docs, data)
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+
+	merged, err := datasource.MergeValues(docs)
+	if err != nil {
+		return fmt.Errorf("release %q: %w", key, err)
+	}
+	name := sanitize(key) + ".yml"
+	if err := writeFile(filepath.Join(valuesDir, name), merged); err != nil {
+		return err
+	}
+
+	rel := p.Releases[key]
+	rel.ValuesFile = filepath.ToSlash(filepath.Join(plan.ValuesDir, name))
+	p.Releases[key] = rel
+	log.Debug("values merged", zap.Int("sources", len(docs)), zap.String("file", rel.ValuesFile))
+	return nil
+}
+
+func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Release, key, storeDir string, log *zap.Logger) error {
+	for _, s := range rc.Store {
+		data, err := res.Resolve(ctx, s.Src)
+		if err != nil {
+			if s.Optional && isMissing(err) {
+				log.Warn("optional store source skipped", zap.String("src", s.Src))
+				continue
+			}
+			return fmt.Errorf("release %q: resolve store %q: %w", key, s.Src, err)
+		}
+		dst := s.Dst
+		if dst == "" {
+			dst = filepath.Base(s.Src)
+		}
+		if !safeRelPath(dst) {
+			return fmt.Errorf("release %q: store dst %q escapes the store directory", key, dst)
+		}
+		path := filepath.Join(storeDir, sanitize(key), filepath.FromSlash(dst))
+		if err := writeFile(path, data); err != nil {
+			return err
+		}
+		log.Debug("store written", zap.String("src", s.Src), zap.String("dst", dst))
+	}
+	return nil
+}
+
+// isMissing reports whether err is a "source not found" error, so an optional
+// source can be skipped without masking real failures.
+func isMissing(err error) bool {
+	return errors.Is(err, os.ErrNotExist)
+}
+
+// safeRelPath rejects absolute paths and any that escape via "..".
+func safeRelPath(p string) bool {
+	if filepath.IsAbs(p) {
+		return false
+	}
+	clean := filepath.Clean(filepath.FromSlash(p))
+	return clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
+}
+
+// sanitize makes a release uniqname safe as a single path segment.
+func sanitize(key string) string {
+	return strings.NewReplacer("/", "_", string(filepath.Separator), "_").Replace(key)
+}
+
+func writeFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create dir for %q: %w", path, err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write %q: %w", path, err)
+	}
+	return nil
+}

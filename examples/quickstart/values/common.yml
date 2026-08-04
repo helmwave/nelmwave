@@ -1,0 +1,7 @@
+# Global values, merged beneath every release's own values (lowest precedence).
+commonLabels:
+  managedBy: nelmwave
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
