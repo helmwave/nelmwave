@@ -22,8 +22,9 @@ releases:
     chart:
       ref: bitnami/postgresql
       version: 15.x
+    # values entries accept any of: {src: url}, bare url, with or without scheme.
     values:
-      - src: file://values/pg.yml.tpl
+      - values/pg.yml.tpl
 
   api:
     namespace: app
@@ -37,9 +38,9 @@ releases:
       ref: oci://registry.example.com/charts/api
       version: 1.4.2
     values:
-      - src: file://values/api.yml.tpl
+      - src: values/api.yml.tpl
     store:
-      - src: file://extra/netpol.yml
+      - src: extra/netpol.yml
         dst: manifests/netpol.yml
 
   cache:

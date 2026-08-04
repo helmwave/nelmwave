@@ -163,3 +163,52 @@ func TestSelector_ParseAndMatch(t *testing.T) {
 		t.Errorf("empty selector should match everything")
 	}
 }
+
+func TestParse_ValueRefForms(t *testing.T) {
+	cfg := mustParseValid(t, `
+releases:
+  a:
+    namespace: n
+    chart: { ref: r/a }
+    values:
+      - src: file://values/pg.yml.tpl
+      - file://values/pg.yml.tpl
+      - src: values/pg.yml.tpl
+      - values/pg.yml.tpl
+      - env:PG_VALUES
+      - { src: values/opt.yml, optional: true }
+`)
+	vals := cfg.Releases["a"].Values
+	if len(vals) != 6 {
+		t.Fatalf("want 6 value refs, got %d: %+v", len(vals), vals)
+	}
+	// The first four spellings must all canonicalize to the same local path.
+	for i := 0; i < 4; i++ {
+		if vals[i].Src != "values/pg.yml.tpl" {
+			t.Errorf("form %d: want src %q, got %q", i, "values/pg.yml.tpl", vals[i].Src)
+		}
+	}
+	// Non-file schemes are preserved verbatim.
+	if vals[4].Src != "env:PG_VALUES" {
+		t.Errorf("env scheme should be preserved, got %q", vals[4].Src)
+	}
+	// Mapping form keeps its extra fields.
+	if vals[5].Src != "values/opt.yml" || !vals[5].Optional {
+		t.Errorf("mapping form lost fields: %+v", vals[5])
+	}
+}
+
+func TestParse_StoreRefBareForm(t *testing.T) {
+	cfg := mustParseValid(t, `
+releases:
+  a:
+    namespace: n
+    chart: { ref: r/a }
+    store:
+      - file://extra/netpol.yml
+`)
+	store := cfg.Releases["a"].Store
+	if len(store) != 1 || store[0].Src != "extra/netpol.yml" {
+		t.Fatalf("bare store form not normalized: %+v", store)
+	}
+}
