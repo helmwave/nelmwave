@@ -23,6 +23,8 @@ releases:
       - { src: templates/netpol.yml.tpl, name: netpol.yml }
 
     values:
-      # a value rendered FROM the stores (value -> store): a parsed field and a
-      # whole embedded manifest.
-      - src: values/app.yml.tpl
+      # 1. base values: plain data, the single source of truth for sizing/image.
+      - { src: values/base.yml, name: base.yml }
+      # 2. a value rendered FROM the previous value (value -> value) AND from the
+      #    stores (value -> store): parsed fields plus a whole embedded manifest.
+      - { src: values/app.yml.tpl, name: app.yml }
