@@ -24,6 +24,12 @@ import (
 //
 // Global values/labels are applied earlier via confijer type-defaults, so each
 // release's Values already carry any inherited defaults.
+//
+// Within a release, stores are resolved first, then values. Each resolved
+// artifact is registered as a gomplate datasource ("stores/<name>" or
+// "values/<name>") so a later *.tpl artifact can pull an earlier one via
+// ds/include. Ordering is backward-only: an item sees only artifacts resolved
+// before it, within the same release.
 func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, outDir string, logger *zap.Logger) error {
 	res := datasource.NewResolver(baseDir)
 	valuesDir := filepath.Join(outDir, plan.ValuesDir)
@@ -36,55 +42,96 @@ func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, o
 		}
 	}
 
+	// A shared empty file backs datasources for skipped optional artifacts, so a
+	// reference to one renders empty instead of erroring.
+	emptyURL, err := writeEmptyPlaceholder(outDir)
+	if err != nil {
+		return err
+	}
+
 	for _, key := range p.ReleaseNames() {
 		rc := cfg.Releases[key]
 		log := logger.With(zap.String("release", key))
 
-		if err := resolveValues(ctx, res, rc, key, p, valuesDir, log); err != nil {
+		// sources accumulates this release's resolved artifact datasources.
+		sources := map[string]string{}
+
+		if _, err := resolveList(ctx, res, rc.Stores, key, outDir, plan.StoreDir, "stores", sources, emptyURL, log); err != nil {
 			return err
 		}
-		if err := resolveStore(ctx, res, rc, key, storeDir, log); err != nil {
+		files, err := resolveList(ctx, res, rc.Values, key, outDir, plan.ValuesDir, "values", sources, emptyURL, log)
+		if err != nil {
 			return err
+		}
+		if len(files) > 0 {
+			rel := p.Releases[key]
+			rel.ValuesFiles = files
+			p.Releases[key] = rel
 		}
 	}
 	return nil
 }
 
-func resolveValues(ctx context.Context, res *datasource.Resolver, rc config.Release, key string, p *plan.Plan, valuesDir string, log *zap.Logger) error {
-	relDir := filepath.Join(valuesDir, sanitize(key))
+// resolveList resolves one ordered list of refs (values or store) for a release,
+// writing each artifact under outDir/subDir/<uniqname>/ and registering it in
+// sources under "<ns>/<name>". It returns the plan-relative paths of the written
+// files (used for values). A skipped optional is registered to emptyURL.
+func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.FileRef, key, outDir, subDir, ns string, sources map[string]string, emptyURL string, log *zap.Logger) ([]string, error) {
+	relDir := filepath.Join(outDir, subDir, sanitize(key))
 	seen := make(map[string]struct{})
 	var files []string
-	for _, ref := range rc.Values {
-		data, err := res.Resolve(ctx, ref.Src)
+	for i, ref := range refs {
+		name, err := artifactName(i, ref.Src, ref.Name)
 		if err != nil {
-			if ref.Optional && isMissing(err) {
-				log.Warn("optional values source skipped", zap.String("src", ref.Src))
-				continue
-			}
-			return fmt.Errorf("release %q: resolve values %q: %w", key, ref.Src, err)
-		}
-		name, err := artifactName(len(files), ref.Src, ref.Name)
-		if err != nil {
-			return fmt.Errorf("release %q: values: %w", key, err)
+			return nil, fmt.Errorf("release %q: %s: %w", key, ns, err)
 		}
 		if _, dup := seen[name]; dup {
-			return fmt.Errorf("release %q: duplicate values name %q", key, name)
+			return nil, fmt.Errorf("release %q: duplicate %s name %q", key, ns, name)
 		}
 		seen[name] = struct{}{}
-		if err := writeFile(filepath.Join(relDir, filepath.FromSlash(name)), data); err != nil {
-			return err
-		}
-		files = append(files, filepath.ToSlash(filepath.Join(plan.ValuesDir, sanitize(key), name)))
-	}
-	if len(files) == 0 {
-		return nil
-	}
+		dsKey := ns + "/" + name
 
-	rel := p.Releases[key]
-	rel.ValuesFiles = files
-	p.Releases[key] = rel
-	log.Debug("values resolved", zap.Int("files", len(files)))
-	return nil
+		data, err := res.Resolve(ctx, ref.Src, sources)
+		if err != nil {
+			if ref.Optional && isMissing(err) {
+				log.Warn("optional source skipped", zap.String("src", ref.Src), zap.String("kind", ns))
+				sources[dsKey] = emptyURL
+				continue
+			}
+			return nil, fmt.Errorf("release %q: resolve %s %q: %w", key, ns, ref.Src, err)
+		}
+
+		path := filepath.Join(relDir, filepath.FromSlash(name))
+		if err := writeFile(path, data); err != nil {
+			return nil, err
+		}
+		sources[dsKey], err = fileURL(path)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, filepath.ToSlash(filepath.Join(subDir, sanitize(key), name)))
+		log.Debug("artifact resolved", zap.String("datasource", dsKey))
+	}
+	return files, nil
+}
+
+// writeEmptyPlaceholder creates an empty file under outDir and returns its
+// file:// URL.
+func writeEmptyPlaceholder(outDir string) (string, error) {
+	path := filepath.Join(outDir, ".empty")
+	if err := writeFile(path, nil); err != nil {
+		return "", err
+	}
+	return fileURL(path)
+}
+
+// fileURL returns an absolute file:// URL for a local path.
+func fileURL(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve path %q: %w", path, err)
+	}
+	return "file://" + filepath.ToSlash(abs), nil
 }
 
 // artifactName returns the file name for a resolved values/store artifact: the
@@ -131,36 +178,6 @@ func pathBase(s string) string {
 		return s[i+1:]
 	}
 	return s
-}
-
-func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Release, key, storeDir string, log *zap.Logger) error {
-	seen := make(map[string]struct{})
-	written := 0
-	for _, s := range rc.Stores {
-		data, err := res.Resolve(ctx, s.Src)
-		if err != nil {
-			if s.Optional && isMissing(err) {
-				log.Warn("optional store source skipped", zap.String("src", s.Src))
-				continue
-			}
-			return fmt.Errorf("release %q: resolve store %q: %w", key, s.Src, err)
-		}
-		name, err := artifactName(written, s.Src, s.Name)
-		if err != nil {
-			return fmt.Errorf("release %q: store: %w", key, err)
-		}
-		if _, dup := seen[name]; dup {
-			return fmt.Errorf("release %q: duplicate store name %q", key, name)
-		}
-		seen[name] = struct{}{}
-		path := filepath.Join(storeDir, sanitize(key), filepath.FromSlash(name))
-		if err := writeFile(path, data); err != nil {
-			return err
-		}
-		written++
-		log.Debug("store written", zap.String("src", s.Src), zap.String("name", name))
-	}
-	return nil
 }
 
 // isMissing reports whether err is a "source not found" error, so an optional

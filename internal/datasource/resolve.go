@@ -45,8 +45,9 @@ const (
 	kindSops
 )
 
-// Resolve fetches src and post-processes it by extension.
-func (r *Resolver) Resolve(ctx context.Context, src string) ([]byte, error) {
+// Resolve fetches src and post-processes it by extension. For *.tpl sources the
+// given datasources (name -> URL) are exposed to the template via ds/include.
+func (r *Resolver) Resolve(ctx context.Context, src string, datasources map[string]string) ([]byte, error) {
 	switch classify(src) {
 	case kindSops:
 		return nil, fmt.Errorf("%q: %w", src, ErrSopsNotSupported)
@@ -55,7 +56,7 @@ func (r *Resolver) Resolve(ctx context.Context, src string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		return tpl.Render(ctx, src, raw, tpl.Options{})
+		return tpl.Render(ctx, src, raw, tpl.Options{Datasources: datasources})
 	default:
 		return r.fetch(ctx, src)
 	}

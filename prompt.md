@@ -353,6 +353,12 @@ releases:
 - Артефакты — `.nelmwave/values/<uniqname>/<NN>-<label>.yml` (NN — индекс порядка), список путей
   пишется в planfile (`valuesFiles`).
 - Флаги источника: `optional` (нет файла → пропустить, не падать), `strict`.
+- **Кросс-ссылки через datasource**: каждый зарезолвленный артефакт регистрируется gomplate-датасорсом
+  под `values/<name>` или `stores/<name>` (`file://` на файл в `.nelmwave/`). В `.tpl` можно
+  вытащить уже готовый артефакт: `[[ include "stores/netpol.yml" ]]` (сырьё) или
+  `[[ (ds "stores/data.yml").foo ]]` (парсинг). Порядок: **stores → values**, элемент видит только
+  зарезолвленные РАНЬШЕ него (в своём списке), value видит все stores; в рамках одного релиза.
+  Ссылка на пропущенный optional → пусто (регистрируется пустой placeholder).
 
 ---
 

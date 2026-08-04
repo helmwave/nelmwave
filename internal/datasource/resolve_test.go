@@ -25,12 +25,12 @@ func TestResolve_LocalCopyAndRender(t *testing.T) {
 	r := NewResolver(dir)
 	ctx := context.Background()
 
-	got, err := r.Resolve(ctx, "plain.yml")
+	got, err := r.Resolve(ctx, "plain.yml", nil)
 	if err != nil || string(got) != "foo: bar\n" {
 		t.Errorf("copy: got %q err %v", got, err)
 	}
 
-	got, err = r.Resolve(ctx, "tmpl.yml.tpl")
+	got, err = r.Resolve(ctx, "tmpl.yml.tpl", nil)
 	if err != nil || string(got) != "n: 7" {
 		t.Errorf("render: got %q err %v", got, err)
 	}
@@ -38,21 +38,21 @@ func TestResolve_LocalCopyAndRender(t *testing.T) {
 
 func TestResolve_EnvScheme(t *testing.T) {
 	t.Setenv("NW_SECRET", "hunter2")
-	got, err := NewResolver("").Resolve(context.Background(), "env:NW_SECRET")
+	got, err := NewResolver("").Resolve(context.Background(), "env:NW_SECRET", nil)
 	if err != nil || string(got) != "hunter2" {
 		t.Errorf("env scheme: got %q err %v", got, err)
 	}
 }
 
 func TestResolve_SopsDeferred(t *testing.T) {
-	_, err := NewResolver("").Resolve(context.Background(), "secret.yml.sops")
+	_, err := NewResolver("").Resolve(context.Background(), "secret.yml.sops", nil)
 	if !errors.Is(err, ErrSopsNotSupported) {
 		t.Errorf("want ErrSopsNotSupported, got %v", err)
 	}
 }
 
 func TestResolve_MissingIsNotExist(t *testing.T) {
-	_, err := NewResolver(t.TempDir()).Resolve(context.Background(), "nope.yml")
+	_, err := NewResolver(t.TempDir()).Resolve(context.Background(), "nope.yml", nil)
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("missing file should be os.ErrNotExist, got %v", err)
 	}
@@ -61,7 +61,7 @@ func TestResolve_MissingIsNotExist(t *testing.T) {
 func TestResolve_RenderErrorNamesSource(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "bad.yml.tpl", "x: [[ ]]")
-	_, err := NewResolver(dir).Resolve(context.Background(), "bad.yml.tpl")
+	_, err := NewResolver(dir).Resolve(context.Background(), "bad.yml.tpl", nil)
 	if err == nil || !strings.Contains(err.Error(), "bad.yml.tpl") {
 		t.Errorf("want error naming source, got %v", err)
 	}

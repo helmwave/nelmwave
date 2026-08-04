@@ -146,3 +146,51 @@ func TestArtifacts_DuplicateNameRejected(t *testing.T) {
 		t.Fatalf("expected duplicate-name error, got: %v", err)
 	}
 }
+
+func TestArtifacts_DatasourceCrossReferences(t *testing.T) {
+	base := t.TempDir()
+	mustWrite(t, base, "data.yml", "foo: bar\n")
+	// store #1 (.tpl) pulls store #0 that was resolved earlier.
+	mustWrite(t, base, "combined.yml.tpl", `wrapped: [[ (ds "stores/data.yml").foo ]]`)
+	// a value pulls a store (parsed) and references a skipped optional (empty).
+	mustWrite(t, base, "vals.yml.tpl", `fromStore: [[ (ds "stores/data.yml").foo ]] opt=[[ include "stores/gone.yml" ]]end`)
+
+	cfg := &config.Config{
+		Releases: map[string]config.Release{
+			"r@n": {
+				Chart: config.Chart{Name: "c/r"},
+				Stores: []config.FileRef{
+					{Src: "data.yml", Name: "data.yml"},
+					{Src: "combined.yml.tpl", Name: "combined.yml"},
+					{Src: "gone.yml", Name: "gone.yml", Optional: true}, // missing -> empty datasource
+				},
+				Values: []config.FileRef{{Src: "vals.yml.tpl", Name: "vals.yml"}},
+			},
+		},
+	}
+	p := plan.FromConfig(cfg)
+	out := filepath.Join(t.TempDir(), "out")
+	if err := Artifacts(context.Background(), cfg, p, base, out, zap.NewNop()); err != nil {
+		t.Fatalf("Artifacts: %v", err)
+	}
+
+	// store -> store reference
+	got := readFile(t, filepath.Join(out, "store", "r@n", "combined.yml"))
+	if got != "wrapped: bar" {
+		t.Errorf("store->store = %q", got)
+	}
+	// value -> store (parsed) + missing optional renders empty
+	got = readFile(t, filepath.Join(out, "values", "r@n", "vals.yml"))
+	if got != "fromStore: bar opt=end" {
+		t.Errorf("value->store / empty-optional = %q", got)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %q: %v", path, err)
+	}
+	return strings.TrimSpace(string(b))
+}
