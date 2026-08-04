@@ -185,7 +185,50 @@ values:
 |---|---|
 | `.yml` / `.yaml` | copied verbatim |
 | `.yml.tpl` | rendered through gomplate (`[[ ]]`) |
-| `.yml.sops` | reserved — currently an explicit "not supported yet" error |
+| `.yml.sops` | decrypted with [sops](https://github.com/getsops/sops) |
+| `.yml.tpl.sops` | decrypted, then rendered |
+
+##### Encrypted sources
+
+`.sops` sources are decrypted in-process — the `sops` binary is not required.
+Keys come from the ambient environment, exactly as they do for the sops CLI:
+`SOPS_AGE_KEY_FILE` / `SOPS_AGE_KEY`, GnuPG, or cloud KMS credentials. nelmwave
+neither stores nor configures key material.
+
+```yaml
+values:
+  - values/db-credentials.yml.sops
+stores:
+  - { src: secrets/tls.yml.sops, name: tls.yml }
+```
+
+The format handed to sops comes from the extension under `.sops`: `.yml`/`.yaml`
+→ yaml, `.json` → json, `.env` → dotenv, anything else → binary.
+
+**Encrypt templates as binary.** gomplate's `[[ ... ]]` is a valid YAML flow
+sequence, so encrypting a template with `--input-type yaml` lets sops reshape
+the actions into nested lists and silently destroy them:
+
+```sh
+sops --encrypt --input-type binary --output-type binary \
+  --age "$AGE_RECIPIENT" secrets.yml.tpl > secrets.yml.tpl.sops
+```
+
+Plain (non-template) documents encrypt normally, and keep sops' per-value
+encryption, which diffs and merges far better than an opaque blob:
+
+```sh
+sops --encrypt --age "$AGE_RECIPIENT" db-credentials.yml > db-credentials.yml.sops
+```
+
+Decrypted content is written to `.nelmwave/` in cleartext — it is a build
+artifact directory, already `.gitignore`d, and should be treated as sensitive.
+`build` says so out loud whenever a run decrypted anything:
+
+```
+WARN  decrypted secrets written in cleartext  {"sources": 1, "dir": ".nelmwave",
+      "hint": "treat this directory as sensitive: do not publish it as a build artifact"}
+```
 
 **Cross-references.** Within a release, `stores` resolve first, then `values`.
 Each resolved artifact is registered as a gomplate datasource named
@@ -430,15 +473,6 @@ cluster.
 > The remaining rootless workarounds (masking `/dev/kmsg`, nesting the cgroup,
 > `KubeletInUserNamespace`) are already part of `docker-compose.yml` and are
 > no-ops under a rootful runtime.
-
-## Not supported
-
-- **SOPS** (`.yml.sops`) — reserved and rejected with an explicit error.
-- **A built-in universal chart** — deliberately out of scope: nelmwave
-  orchestrates external charts and ships no templates of its own.
-- **Resource-level ordering annotations** (`werf.io/*`) for third-party charts —
-  nelm's public API has no post-render hook, so only release-wide annotations are
-  reachable.
 
 ---
 

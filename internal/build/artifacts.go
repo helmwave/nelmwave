@@ -67,7 +67,31 @@ func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, o
 			p.Releases[key] = rel
 		}
 	}
+
+	warnAboutDecryptedSecrets(cfg, outDir, logger)
 	return nil
+}
+
+// warnAboutDecryptedSecrets points out that sops sources have just been written
+// out in cleartext. The build directory is gitignored, but nothing stops it from
+// being archived as a CI artifact — and the manifest gives no hint that it now
+// holds secrets.
+func warnAboutDecryptedSecrets(cfg *config.Config, outDir string, logger *zap.Logger) {
+	var n int
+	for _, rc := range cfg.Releases {
+		for _, ref := range append(append([]config.FileRef{}, rc.Stores...), rc.Values...) {
+			if datasource.IsEncrypted(ref.Src) {
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		return
+	}
+	logger.Warn("decrypted secrets written in cleartext",
+		zap.Int("sources", n),
+		zap.String("dir", outDir),
+		zap.String("hint", "treat this directory as sensitive: do not publish it as a build artifact"))
 }
 
 // resolveList resolves one ordered list of refs (values or store) for a release,
@@ -169,6 +193,10 @@ func indexedBasename(index int, src string) string {
 	if i := strings.IndexAny(label, "?#"); i >= 0 {
 		label = label[:i]
 	}
+	// Drop the suffixes that named a processing step, in the order they were
+	// applied: what lands on disk is rendered cleartext, and a name ending in
+	// .sops or .tpl would claim otherwise.
+	label = strings.TrimSuffix(label, ".sops")
 	label = strings.TrimSuffix(strings.TrimSuffix(label, ".tpl"), ".tmpl")
 	label = pathBase(label)
 	label = strings.Map(func(r rune) rune {

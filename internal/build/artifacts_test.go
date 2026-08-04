@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/helmwave/nelmwave/internal/config"
 	"github.com/helmwave/nelmwave/internal/plan"
@@ -221,4 +222,60 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %q: %v", path, err)
 	}
 	return strings.TrimSpace(string(b))
+}
+
+func TestIndexedBasename_DropsProcessingSuffixes(t *testing.T) {
+	// The artifact on disk is decrypted and rendered, so its name must not keep
+	// suffixes that claim otherwise.
+	cases := map[string]string{
+		"values/db.yml":          "00-db.yml",
+		"values/db.yml.tpl":      "00-db.yml",
+		"values/db.yml.sops":     "00-db.yml",
+		"values/db.yml.tpl.sops": "00-db.yml",
+	}
+	for src, want := range cases {
+		if got := indexedBasename(0, src); got != want {
+			t.Errorf("indexedBasename(%q) = %q, want %q", src, got, want)
+		}
+	}
+}
+
+func TestArtifacts_WarnsWhenSecretsWereDecrypted(t *testing.T) {
+	base := t.TempDir()
+	mustWrite(t, base, "plain.yml", "a: 1\n")
+
+	cfg := &config.Config{
+		Releases: map[string]config.Release{
+			"a@n": {
+				Chart:  config.Chart{Name: "r/a"},
+				Values: []config.FileRef{{Src: "plain.yml"}},
+			},
+		},
+	}
+	core, logs := observer.New(zap.WarnLevel)
+	if err := Artifacts(context.Background(), cfg, plan.FromConfig(cfg), base, filepath.Join(t.TempDir(), "out"), zap.New(core)); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if n := logs.FilterMessage("decrypted secrets written in cleartext").Len(); n != 0 {
+		t.Errorf("no sops sources, so no warning expected, got %d", n)
+	}
+
+	// The same build with an encrypted source warns once, counting the sources.
+	// Resolution itself is not exercised here (that needs keys) — the source is
+	// optional so the build still succeeds.
+	cfg.Releases["a@n"] = config.Release{
+		Chart:  config.Chart{Name: "r/a"},
+		Values: []config.FileRef{{Src: "gone.yml.sops", Optional: true}},
+	}
+	core, logs = observer.New(zap.WarnLevel)
+	if err := Artifacts(context.Background(), cfg, plan.FromConfig(cfg), base, filepath.Join(t.TempDir(), "out"), zap.New(core)); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	entries := logs.FilterMessage("decrypted secrets written in cleartext").All()
+	if len(entries) != 1 {
+		t.Fatalf("want exactly one warning, got %d", len(entries))
+	}
+	if got := entries[0].ContextMap()["sources"]; got != int64(1) {
+		t.Errorf("sources = %v, want 1", got)
+	}
 }

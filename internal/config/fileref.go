@@ -20,7 +20,8 @@ type FileRef struct {
 	// Src is a datasource reference: a local path, or a URL with any gomplate
 	// datasource scheme (env:, vault://, s3://, http(s)://, git://, ...).
 	// Behaviour is chosen by extension: *.yml/*.yaml are copied, *.yml.tpl are
-	// rendered through gomplate. (*.yml.sops is reserved; not supported yet.)
+	// rendered through gomplate, *.sops is decrypted with sops (and *.tpl.sops
+	// is decrypted, then rendered).
 	Src string `json:"src" yaml:"src"`
 	// Name names the resolved artifact file under .nelmwave/ (values or store).
 	// Empty means nelmwave derives an index-prefixed basename automatically.
