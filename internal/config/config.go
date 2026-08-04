@@ -26,4 +26,14 @@ type Config struct {
 	Repositories map[string]Repository `json:"repositories" yaml:"repositories"`
 	// Releases are the units nelmwave deploys, keyed by release name.
 	Releases map[string]Release `json:"releases" yaml:"releases"`
+
+	// needsCache memoizes ResolveNeeds per release. Resolution compares every
+	// release against every other one (label selectors), and both Validate and
+	// plan.FromConfig ask for the same answers, so without this the whole O(n²)
+	// pass runs twice. Unexported, so confijer ignores it.
+	//
+	// Valid only while Releases is unchanged: mutate the config and the cache is
+	// stale. Everything after Parse treats it as read-only. Not safe for
+	// concurrent use.
+	needsCache map[string][]ResolvedNeed
 }

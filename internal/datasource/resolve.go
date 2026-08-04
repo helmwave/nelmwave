@@ -3,10 +3,10 @@
 // (Helm-native ordered merge), so this package only turns a reference into
 // content.
 //
-// Every reference is read through gomplate v5's `include`, which returns the raw
-// datasource content: local paths (schemeless or file://) become absolute
-// file:// URLs, other schemes (env:, http(s)://, s3://, vault://, git://, ...)
-// are passed through as-is. The content is then post-processed by extension:
+// Local paths (schemeless or file://) are read straight from disk, relative to
+// the resolver's base directory. Every other scheme (env:, http(s)://, s3://,
+// vault://, git://, ...) is read through gomplate v5's `include`, which returns
+// the raw datasource content. The content is then post-processed by extension:
 // *.sops is decrypted, *.tpl/*.tmpl are rendered as gomplate templates, and
 // everything else is copied verbatim. The two compose: *.tpl.sops is decrypted
 // first, then rendered.
@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -153,7 +154,15 @@ func (r *Resolver) fetch(ctx context.Context, src string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolve path %q: %w", src, err)
 		}
-		u = &url.URL{Scheme: "file", Path: abs}
+		// Read local files directly. Going through gomplate would build a whole
+		// template renderer — registering every function namespace — to do what
+		// os.ReadFile does: ~5x the time and ~60x the allocations per file. It
+		// also surfaces fs.ErrNotExist as-is instead of buried in a render error.
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", src, err)
+		}
+		return data, nil
 	}
 	return r.fetchDatasource(ctx, src, u)
 }

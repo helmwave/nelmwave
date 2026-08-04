@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -30,6 +31,12 @@ import (
 // "values/<name>") so a later *.tpl artifact can pull an earlier one via
 // ds/include. Ordering is backward-only: an item sees only artifacts resolved
 // before it, within the same release.
+//
+// Resolution is sequential, and has to be: gomplate v5 records every render in a
+// package-level Metrics struct without synchronisation, so concurrent Render
+// calls crash with "concurrent map writes" (gomplate/v5@v5.2.0 render.go:226).
+// Releases are otherwise independent and would parallelise cleanly — revisit
+// this once gomplate is safe for concurrent use.
 func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, outDir string, logger *zap.Logger) error {
 	res := datasource.NewResolver(baseDir)
 	valuesDir := filepath.Join(outDir, plan.ValuesDir)
@@ -143,23 +150,23 @@ func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.Fi
 
 // lazyEmptyPlaceholder returns a func that creates the shared empty placeholder
 // under outDir on first call and returns its file:// URL, memoizing the result.
-// Builds are single-threaded, so no locking is needed.
+// The sync.Once keeps it to a single write even though resolution is currently
+// sequential, so this stays correct if that ever changes.
 func lazyEmptyPlaceholder(outDir string) func() (string, error) {
-	var url string
+	var (
+		once sync.Once
+		url  string
+		err  error
+	)
 	return func() (string, error) {
-		if url != "" {
-			return url, nil
-		}
-		path := filepath.Join(outDir, ".empty")
-		if err := writeFile(path, nil); err != nil {
-			return "", err
-		}
-		u, err := fileURL(path)
-		if err != nil {
-			return "", err
-		}
-		url = u
-		return url, nil
+		once.Do(func() {
+			path := filepath.Join(outDir, ".empty")
+			if err = writeFile(path, nil); err != nil {
+				return
+			}
+			url, err = fileURL(path)
+		})
+		return url, err
 	}
 }
 

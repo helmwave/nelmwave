@@ -115,7 +115,17 @@ type ResolvedNeed struct {
 // excluded; the result is sorted by uniqname and deduplicated, with the
 // required side winning when a target appears both ways. It errors on an
 // invalid selector.
+//
+// The result is memoized per release (see Config.needsCache): callers ask for
+// the same edges repeatedly — validation walks the graph for cycles, then the
+// plan projects it — and each resolution is O(number of releases). r is expected
+// to be c.Releases[self]; passing a different body returns whatever was cached
+// for that key.
 func (c *Config) ResolveNeeds(self string, r Release) ([]ResolvedNeed, error) {
+	if cached, ok := c.needsCache[self]; ok {
+		return cached, nil
+	}
+
 	optional := make(map[string]bool)
 	for need, opt := range r.Needs.Releases {
 		if need != self {
@@ -155,6 +165,13 @@ func (c *Config) ResolveNeeds(self string, r Release) ([]ResolvedNeed, error) {
 	for i, k := range keys {
 		out[i] = ResolvedNeed{Uniqname: k, Optional: optional[k]}
 	}
+
+	// Only successful resolutions are cached: a selector error must keep
+	// surfacing on every call, not be swallowed after the first.
+	if c.needsCache == nil {
+		c.needsCache = make(map[string][]ResolvedNeed, len(c.Releases))
+	}
+	c.needsCache[self] = out
 	return out, nil
 }
 
