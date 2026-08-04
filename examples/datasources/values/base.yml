@@ -1,0 +1,11 @@
+# Base values: the single place where sizing/image knobs live. Passed to the
+# chart as-is, and read by the next values file through "values/base.yml".
+replicaCount: 2
+
+image:
+  tag: 1.27.4
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi

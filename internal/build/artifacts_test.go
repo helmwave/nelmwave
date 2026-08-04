@@ -2,6 +2,8 @@ package build
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +77,32 @@ func TestArtifacts_OptionalMissingSkipped(t *testing.T) {
 	}
 	if len(p.Releases["a@n"].ValuesFiles) != 0 {
 		t.Errorf("no values files expected when the only source is a skipped optional")
+	}
+	// The skip is what creates the placeholder that backs its datasource.
+	if _, err := os.Stat(filepath.Join(out, ".empty")); err != nil {
+		t.Errorf("placeholder should back the skipped optional's datasource: %v", err)
+	}
+}
+
+func TestArtifacts_NoPlaceholderWithoutOptionalSkips(t *testing.T) {
+	base := t.TempDir()
+	mustWrite(t, base, "v.yml", "a: 1\n")
+	cfg := &config.Config{
+		Releases: map[string]config.Release{
+			"a@n": {
+				Chart:  config.Chart{Name: "r/a"},
+				Values: []config.FileRef{{Src: "v.yml"}},
+			},
+		},
+	}
+	p := plan.FromConfig(cfg)
+	out := filepath.Join(t.TempDir(), "out")
+
+	if err := Artifacts(context.Background(), cfg, p, base, out, zap.NewNop()); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, ".empty")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("placeholder should not exist when nothing was skipped (stat err: %v)", err)
 	}
 }
 

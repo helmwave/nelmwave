@@ -43,11 +43,9 @@ func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, o
 	}
 
 	// A shared empty file backs datasources for skipped optional artifacts, so a
-	// reference to one renders empty instead of erroring.
-	emptyURL, err := writeEmptyPlaceholder(outDir)
-	if err != nil {
-		return err
-	}
+	// reference to one renders empty instead of erroring. It is written on first
+	// use, so a manifest without optional sources leaves no stray file behind.
+	emptyURL := lazyEmptyPlaceholder(outDir)
 
 	for _, key := range p.ReleaseNames() {
 		rc := cfg.Releases[key]
@@ -76,7 +74,7 @@ func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, o
 // writing each artifact under outDir/subDir/<uniqname>/ and registering it in
 // sources under "<ns>/<name>". It returns the plan-relative paths of the written
 // files (used for values). A skipped optional is registered to emptyURL.
-func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.FileRef, key, outDir, subDir, ns string, sources map[string]string, emptyURL string, log *zap.Logger) ([]string, error) {
+func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.FileRef, key, outDir, subDir, ns string, sources map[string]string, emptyURL func() (string, error), log *zap.Logger) ([]string, error) {
 	relDir := filepath.Join(outDir, subDir, sanitize(key))
 	seen := make(map[string]struct{})
 	var files []string
@@ -95,7 +93,11 @@ func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.Fi
 		if err != nil {
 			if ref.Optional && isMissing(err) {
 				log.Warn("optional source skipped", zap.String("src", ref.Src), zap.String("kind", ns))
-				sources[dsKey] = emptyURL
+				placeholder, err := emptyURL()
+				if err != nil {
+					return nil, err
+				}
+				sources[dsKey] = placeholder
 				continue
 			}
 			return nil, fmt.Errorf("release %q: resolve %s %q: %w", key, ns, ref.Src, err)
@@ -115,14 +117,26 @@ func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.Fi
 	return files, nil
 }
 
-// writeEmptyPlaceholder creates an empty file under outDir and returns its
-// file:// URL.
-func writeEmptyPlaceholder(outDir string) (string, error) {
-	path := filepath.Join(outDir, ".empty")
-	if err := writeFile(path, nil); err != nil {
-		return "", err
+// lazyEmptyPlaceholder returns a func that creates the shared empty placeholder
+// under outDir on first call and returns its file:// URL, memoizing the result.
+// Builds are single-threaded, so no locking is needed.
+func lazyEmptyPlaceholder(outDir string) func() (string, error) {
+	var url string
+	return func() (string, error) {
+		if url != "" {
+			return url, nil
+		}
+		path := filepath.Join(outDir, ".empty")
+		if err := writeFile(path, nil); err != nil {
+			return "", err
+		}
+		u, err := fileURL(path)
+		if err != nil {
+			return "", err
+		}
+		url = u
+		return url, nil
 	}
-	return fileURL(path)
 }
 
 // fileURL returns an absolute file:// URL for a local path.

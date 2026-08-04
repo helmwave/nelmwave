@@ -10,8 +10,8 @@ type Release struct {
 	// edges), by explicit uniqname and/or by label selector.
 	Needs Needs `json:"needs" yaml:"needs,omitempty"`
 
-	// Chart points at a helm-repo or OCI chart. Required (the built-in universal
-	// chart is deferred to a later milestone).
+	// Chart points at a helm-repo or OCI chart. Always required: nelmwave
+	// orchestrates external charts only and ships no templates of its own.
 	Chart Chart `json:"chart" yaml:"chart"`
 
 	// Values are per-release value sources, merged on top of global Values.
@@ -41,7 +41,7 @@ type Chart struct {
 // the release adapter (added in a later milestone).
 type ReleaseOptions struct {
 	// Timeout for the operation, e.g. "5m". Empty means nelm's default.
-	Timeout string `json:"timeout" yaml:"timeout"`
+	Timeout string `json:"timeout" yaml:"timeout,omitempty"`
 	// CreateNamespace controls namespace creation (nelm NoCreateNamespace = !this).
 	CreateNamespace bool `json:"createNamespace" yaml:"createNamespace" default:"true"`
 	// AutoRollback rolls back to the last deployed revision on failure

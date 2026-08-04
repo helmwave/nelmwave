@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +28,30 @@ func newBuildCommand(_ *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Render nelmwave.yml.tpl and write the plan to .nelmwave/",
+		Long: `Render the manifest, validate it, resolve every datasource, and write the plan.
+
+build is the only command that renders templates and reaches out to datasources.
+It produces, under --output (default .nelmwave/):
+
+  planfile.yml            the resolved plan: releases, dependency edges, artifacts
+  values/<release>/...    values files, in merge order
+  store/<release>/...     companion files declared in stores:
+
+Values and store artifacts are rebuilt from scratch on every run, so sources
+removed from the manifest leave nothing behind. Within a release, stores resolve
+first, then values; each resolved artifact is registered as a gomplate
+datasource ("stores/<name>", "values/<name>") that later *.tpl artifacts of the
+same release can pull in via ds/include.
+
+With no --file, build looks for nelmwave.yml.tpl and falls back to nelmwave.yml.`,
+		Example: `  # Build from nelmwave.yml.tpl in the current directory
+  nelmwave build
+
+  # Environment variables reach the manifest through gomplate
+  ENV=stg nelmwave build
+
+  # Build a specific manifest into a specific directory
+  nelmwave build --file manifests/prod.yml.tpl --output .nelmwave-prod`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runBuild(cmd, o)
 		},
@@ -71,7 +97,8 @@ func buildPlan(ctx context.Context, manifest, output string, logger *zap.Logger)
 		return err
 	}
 	if err := config.Validate(cfg); err != nil {
-		return fmt.Errorf("invalid manifest:\n%w", err)
+		n := logValidationProblems(logger, err)
+		return fmt.Errorf("invalid manifest %q: %d problem(s), see the log above", manifest, n)
 	}
 
 	p := plan.FromConfig(cfg)
@@ -92,6 +119,23 @@ func buildPlan(ctx context.Context, manifest, output string, logger *zap.Logger)
 	return nil
 }
 
+// logValidationProblems logs every problem carried by a joined validation error
+// as its own record and returns how many there were. Validate collects all
+// problems at once; emitting them separately keeps each one readable in console
+// format and greppable in json, instead of one escaped multi-line string.
+func logValidationProblems(logger *zap.Logger, err error) int {
+	var joined interface{ Unwrap() []error }
+	if !errors.As(err, &joined) {
+		logger.Error("manifest problem", zap.Error(err))
+		return 1
+	}
+	problems := joined.Unwrap()
+	for _, p := range problems {
+		logger.Error("manifest problem", zap.Error(p))
+	}
+	return len(problems)
+}
+
 // isTemplate reports whether path should be rendered through gomplate.
 func isTemplate(path string) bool {
 	return strings.HasSuffix(path, ".tpl")
@@ -101,8 +145,12 @@ func isTemplate(path string) bool {
 // --file and the default .tpl is absent, it falls back to a plain nelmwave.yml.
 func resolveManifest(file string, changed bool) (string, error) {
 	if changed {
-		if _, err := os.Stat(file); err != nil {
-			return "", fmt.Errorf("manifest %q not found: %w", file, err)
+		_, err := os.Stat(file)
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("manifest %q not found", file)
+		}
+		if err != nil {
+			return "", fmt.Errorf("manifest %q: %w", file, err)
 		}
 		return file, nil
 	}

@@ -4,7 +4,9 @@
 package plan
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -126,6 +128,11 @@ func (p *Plan) Write(dir string) error {
 func Read(dir string) (*Plan, error) {
 	path := filepath.Join(dir, PlanfileName)
 	data, err := os.ReadFile(path)
+	// A missing planfile is the common case (nothing built yet), so it gets a
+	// clean message instead of the doubled path os.ReadFile would produce.
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("no plan file at %q", path)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read plan file %q: %w", path, err)
 	}

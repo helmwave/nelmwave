@@ -21,6 +21,19 @@ func newDownCommand(g *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "down",
 		Short: "Uninstall the selected releases in reverse dependency order",
+		Long: `Uninstall the selected releases, reversing the dependency graph.
+
+Dependents go first: if api needs postgres, api is removed before postgres.
+Independent releases are uninstalled in parallel, bounded by --concurrency.
+
+Unlike up, down does not consider needs policy — it only reverses the edges
+within the selection. A dependency outside the selection is left alone, so
+narrowing with -l never removes something you did not select.`,
+		Example: `  # Tear down everything in the plan
+  nelmwave down
+
+  # Remove just the staging releases
+  nelmwave down -l 'env=stg'`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runDown(cmd, g, o)
 		},

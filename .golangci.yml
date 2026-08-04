@@ -1,0 +1,32 @@
+version: "2"
+
+# Keeps `golangci-lint run ./...` reproducible across machines: the milestone
+# checklist requires a clean linter run, so the enabled set is pinned here
+# rather than left to whatever the local default happens to be.
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - errorlint # %w vs %v, errors.As/Is over type asserts
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true # doc comments are reviewed by hand, not enforced
+  exclusions:
+    presets:
+      - common-false-positives
+    rules:
+      # Table-driven tests routinely ignore errors from helpers whose failure
+      # would surface as a test assertion anyway.
+      - path: _test\.go$
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

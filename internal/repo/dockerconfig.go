@@ -44,7 +44,7 @@ func DockerConfig(repos map[string]config.Repository) (string, func(), error) {
 	}
 	cleanup := func() { _ = os.Remove(f.Name()) }
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		cleanup()
 		return "", noop, fmt.Errorf("write docker config: %w", err)
 	}

@@ -37,9 +37,30 @@ func NewRootCommand() *cobra.Command {
 // after the run to report top-level errors.
 func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           "nelmwave",
-		Short:         "Declarative release orchestrator on top of nelm",
-		Long:          "nelmwave manages many releases from a single declarative nelmwave.yml manifest, rendered through gomplate and applied via nelm.",
+		Use:   "nelmwave",
+		Short: "Declarative release orchestrator on top of nelm",
+		Long: `nelmwave manages many releases from a single declarative nelmwave.yml manifest.
+
+The manifest is rendered with gomplate ([[ ]] delimiters), values and companion
+files are resolved from arbitrary datasources into .nelmwave/, and releases are
+applied through nelm in dependency order — independent branches in parallel.
+
+The usual loop:
+
+  nelmwave build     # render, validate, resolve datasources into .nelmwave/
+  nelmwave diff      # preview what would change
+  nelmwave up        # apply it
+
+Runtime commands (up/down/diff) never re-render the manifest: they read the
+plan that build wrote, so what you reviewed is what gets applied.`,
+		Example: `  # Build the plan and inspect it
+  nelmwave build && cat .nelmwave/planfile.yml
+
+  # Deploy only the production API tier
+  nelmwave up -l 'app=api,env=prod'
+
+  # Fail a CI job when live state drifted from the manifest
+  nelmwave diff --detailed-exitcode`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version.String(),

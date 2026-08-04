@@ -23,6 +23,28 @@ func newDiffCommand(g *globalOptions) *cobra.Command {
 		Use:     "diff",
 		Aliases: []string{"plan"},
 		Short:   "Show the changes the selected releases would apply",
+		Long: `Compute what up would change, without touching the cluster.
+
+diff reads the plan written by build and asks nelm to plan each selected
+release. Releases are planned in parallel, bounded by --concurrency; unlike up,
+the dependency graph only orders the output, since nothing is applied.
+
+Exit codes:
+
+  0   no error (and, with --detailed-exitcode, no pending changes)
+  1   something failed
+  2   changes are planned (--detailed-exitcode only)
+
+The exit code 2 convention matches terraform plan and git diff --exit-code, so a
+CI job can gate on drift without parsing output.`,
+		Example: `  # What would nelmwave up do?
+  nelmwave diff
+
+  # Same thing, spelled differently
+  nelmwave plan -l 'env=prod'
+
+  # Gate a CI job on drift
+  nelmwave diff --detailed-exitcode || echo "drift detected"`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runDiff(cmd, g, o)
 		},

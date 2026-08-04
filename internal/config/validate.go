@@ -7,7 +7,7 @@ import (
 )
 
 // Validate checks a parsed Config for structural correctness:
-//   - every release has a chart.name (the built-in universal chart is deferred);
+//   - every release has a chart.name;
 //   - labels are valid Kubernetes labels;
 //   - needs reference existing releases, don't self-reference, and form a DAG
 //     (no cycles).

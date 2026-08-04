@@ -21,8 +21,8 @@
 >   `needs.matchLabels` + `needs.matchLabelsExpressions`. Зависимость — объединение.
 > - **Datasources — свой резолвер** на gomplate v5 (fileref v0.2.0 непригоден как библиотека).
 > - **SOPS отложен**: в MVP только `.yml`/`.yml.tpl`; `.yml.sops` → «not supported yet».
-> - **Встроенный универсальный chart отложен** (пост-MVP): `chart.name` обязателен, блока
->   `universal:` в схеме пока нет (§12/M5 — на будущее).
+> - **Встроенный универсальный chart исключён из планов** (2026-08-05): `chart.name` обязателен,
+>   блока `universal:` в схеме нет и не будет (§12/M5 сняты).
 > - **confijer биндит по `json`-тегу** (не `yaml`) через `EqualFold`; в config-структурах — двойные
 >   теги `json`+`yaml` (json для загрузки, yaml для сериализации planfile).
 
@@ -71,7 +71,7 @@ nelm — параллельно, с учётом порядка.
 | Модель needs | **DAG с параллельностью** (топосорт + concurrent-исполнение независимых веток). Зависимости — по uniqname (`needs.releases`) и по инлайн k8s-селектору (`needs.matchLabels`/`needs.matchLabelsExpressions`) |
 | Селектор | **Kubernetes-style label selector** (`app=api,env in (prod,stg),tier!=db`) |
 | Хранилище build | каталог **`.nelmwave/`** (planfile + распакованные charts/values/store-files) |
-| Универсальный chart | **отложен (пост-MVP)**; в перспективе — вшит через `go:embed`, конфиг по confijer-схеме |
+| Универсальный chart | **исключён из планов** (2026-08-05); nelmwave оркеструет только внешние charts |
 | CLI | **cobra** (рекомендуется; согласуй, если хочешь иное) |
 
 **MVP команды (первый релиз):** `build`, `up`, `down`, `diff` (aka `plan`).
@@ -107,10 +107,8 @@ nelm умеет:
 ### 3.3 confijer (`github.com/helmwave/confijer`)
 Загрузка **уже отрендеренного** `nelmwave.yml` в Go-структуры с дефолтами по типам.
 API: `UnmarshalYAML(data, out)` / `UnmarshalYAMLFile(path, out)`.
-Использование:
-1. Парсинг `nelmwave.yml` → `config.Config`.
-2. Значения универсального chart'а (§12): top-level ключ-тип задаёт дефолты для всех релизов,
-   каждый релиз переопределяет точечно.
+Использование: парсинг `nelmwave.yml` → `config.Config`; top-level ключ-тип (`Release:`) задаёт
+дефолты для всех релизов, каждый релиз переопределяет точечно.
 
 Приоритет значений (низший→высший): zero → тег `default:"..."` → рекурсивные дефолты типа →
 явные значения по точному пути. Проектируй структуры конфигов с оглядкой на эту модель.
@@ -170,7 +168,6 @@ github.com/helmwave/nelmwave
 │   ├── plan/               # planfile: сборка, сериализация в .nelmwave/, чтение
 │   ├── graph/              # DAG: needs между релизами, топосорт, параллельный проход
 │   ├── release/            # адаптер к nelm/pkg/action (install/uninstall/plan/render)
-│   ├── chart/              # универсальный встроенный chart (go:embed) + confijer-рендер values
 │   ├── kubedep/            # проставление аннотаций nelm для needs между ресурсами
 │   ├── log/                # zap setup, флаги, auto console/json
 │   └── version/            # версия бинаря
@@ -244,7 +241,6 @@ releases:
     chart:
       name: bitnami/redis
       version: 20.x
-    # (встроенный универсальный chart и блок universal: отложены — §12)
 ```
 
 ### 5.2 Структуры (confijer-friendly) — реализовано
@@ -260,7 +256,6 @@ releases:
 - `Release`: `Labels map[string]string`, `Needs Needs`, `Chart{Name, Version}` (обязателен),
   `Values []FileRef`, `Stores []FileRef`, `Options ReleaseOptions`
   (проброс nelm-опций: timeout, autoRollback≈atomic, createNamespace, …).
-  *(блок `universal:`/`UniversalValues` отложен — §12.)*
 - **`FileRef`** (единый для values и store): `Src`, `Name` (имя артефакта под `.nelmwave/`;
   пусто → `<NN>-<basename>`), `Optional`, `Strict`. Принимает 4 формы (строка/мапа × со схемой/без).
   Внутренней раскладкой `.nelmwave/` управляет nelmwave, пользователь задаёт только `src`+`name`.
@@ -393,30 +388,21 @@ releases:
 - nelmwave должен уметь выражать порядок применения **ресурсов внутри релиза** и (возможно)
   межрелизные ресурсные зависимости, транслируя это в **аннотации nelm** (deploy-dependencies /
   weight / external dependencies).
-- **Изучи точный контракт аннотаций nelm** (семейство `werf.io/*`) и предоставь способ их задавать:
-  - для встроенного универсального chart'а — генерировать аннотации из декларации;
-  - для внешних chart'ов — прокидывать/патчить (реши: через post-render hook nelm, если есть, или
-    через values, если chart их поддерживает).
-- Это отдельный слой `internal/kubedep`. Если nelm-API не позволяет патчить произвольные чужие
-  манифесты — задокументируй ограничение и ограничься универсальным chart'ом на первом этапе.
+- **Изучи точный контракт аннотаций nelm** (семейство `werf.io/*`) и предоставь способ их задавать
+  для внешних chart'ов — прокидывать/патчить (реши: через post-render hook nelm, если есть, или
+  через values, если chart их поддерживает).
+- Это отдельный слой `internal/kubedep`. Post-render в публичном API nelm нет, патч возможен только
+  через `ExtraAnnotations`/`ExtraLabels` (на весь релиз, не на отдельный ресурс) — задокументируй
+  ограничение.
 
 ---
 
-## 12. Встроенный универсальный chart [ОТЛОЖЕНО — пост-MVP]
+## 12. Встроенный универсальный chart [ИСКЛЮЧЁН ИЗ ПЛАНОВ]
 
-> **Отложено** (решение владельца, 2026-08-04). В текущей схеме блока `universal:` НЕТ, `chart.name`
-> обязателен. Раздел ниже — целевой дизайн на будущее (milestone после MVP).
-
-- Обычный Helm-chart, **вшитый в бинарь** через `go:embed` (каталог `internal/chart/universal/`).
-- Активируется, когда у релиза **не задан** `chart.name`, но задан блок `universal:`.
-- Values универсального chart'а описываются **confijer-схемой**: top-level тип задаёт дефолты для
-  всех релизов, каждый релиз переопределяет точечно (используй модель приоритетов confijer).
-- **Охват ресурсов на старте** (реализуй именно этот набор, расширяемо):
-  `Deployment`, `Service`, `Ingress`, `ConfigMap`, `Secret`, `HPA`. Заложи расширение
-  (`ServiceAccount`, `PVC`, `CronJob`, `NetworkPolicy` — потом).
-- Chart подаётся в `action.ReleaseInstall` как локальный путь (распакованный embed во временный
-  каталог или `.nelmwave/charts/<release>/`).
-- Поддержи аннотации needs-между-ресурсами (§11.2) прямо в шаблонах chart'а.
+> **Исключён** (решение владельца, 2026-08-05). Блока `universal:` в схеме нет и не будет,
+> `chart.name` обязателен всегда. nelmwave оркеструет только внешние charts (helm-repo, OCI,
+> локальный путь) и не поставляет собственных шаблонов. Номер раздела сохранён, чтобы не съезжали
+> ссылки на §13+.
 
 ---
 
@@ -505,15 +491,23 @@ releases:
    `--detailed-exitcode` → exit 2 при изменениях (сентинелы nelm `ErrChangesPlanned` и др.;
    `cli.exitError{code}` в Execute). `up --dry-run` делегирует в diff. graph.Run ловит паники.
    ВАЖНО: перед `action.*` привязать логгер к ctx (`nelmlog.SetupLogging`), иначе паника logboek.
-5. **M5 — Универсальный chart. [ОТЛОЖЕНО — пост-MVP]** `go:embed` chart, confijer-values, набор
-   ресурсов из §12, активация через `universal:`. В MVP не входит; `chart.name` обязателен.
+5. **M5 — Универсальный chart. [ИСКЛЮЧЁН ИЗ ПЛАНОВ]** См. §12. Номер milestone сохранён, чтобы
+   не переименовывать M6+.
 6. **M6 — Registries/repos. ✅ Готово.** `internal/repo`: `Resolve` мапит chart.name на nelm —
    `oci://`→passthrough, `alias/chart`→ChartRepoURL+basic-auth (helm `--repo`, без repositories.yaml),
    иначе локально; `DockerConfig` генерит временный docker config.json для OCI-кредов
    (`RegistryCredentialsPath`). ВАЖНО: удалённые чарты за feature gate — включаем
    `featgate.FeatGateRemoteCharts.Enable()` в init пакета release.
-7. **M7 — Needs между ресурсами.** Аннотации nelm в универсальном chart'е (+ по возможности внешние).
-8. **M8 — Полировка.** Логи, ошибки, docs, `--help`, примеры в `examples/`.
+7. **M7 — Needs между ресурсами.** Аннотации nelm для внешних chart'ов в пределах того, что
+   позволяет публичный API (`ExtraAnnotations`/`ExtraLabels`) — см. §11.2.
+8. **M8 — Полировка. ✅ Готово.** `.golangci.yml` (v2, standard + errorlint/gocritic/misspell/
+   revive/unconvert, gofmt+goimports) — `golangci-lint run ./...` чист. `Long`+`Example` у root и
+   всех команд (включая exit codes в `diff`). README переписан: полное описание схемы
+   `nelmwave.yml`, раскладка `.nelmwave/`, кросс-ссылки датасорсов, команды, exit codes,
+   «не поддерживается». Ошибки: проблемы валидации логируются по одной (`manifest problem`) вместо
+   одной экранированной многострочной строки; отсутствующий planfile/манифест дают чистое сообщение
+   без дублирования пути. Planfile без шума (`timeout` omitempty), `.empty`-плейсхолдер создаётся
+   лениво — только при реальном пропуске optional-источника.
 
 Каждый milestone: компилируется, `go vet` + `golangci-lint` чисто, есть тесты, есть краткий
 раздел в README.
@@ -522,14 +516,15 @@ releases:
 
 ## 19. Definition of Done
 
-- `go build ./...` и `go test ./...` зелёные; линтер чист.
-- `nelmwave build` из примера `examples/` даёт корректный `.nelmwave/planfile.yml`.
-- `nelmwave up -l '...'` разворачивает подмножество релизов в правильном порядке (проверено на
-  kind), `down` сносит в обратном; `diff` показывает изменения.
-- ~~Универсальный chart разворачивает Deployment+Service+Ingress+ConfigMap+Secret+HPA из `universal:`.~~
-  *(отложено — пост-MVP, §12.)*
-- Values и store-files тянутся из ≥2 разных datasource-схем.
-- README с быстрым стартом и описанием схемы `nelmwave.yml`.
+- ✅ `go build ./...` и `go test ./...` зелёные; `golangci-lint run ./...` чист (конфиг `.golangci.yml`).
+- ✅ `nelmwave build` из обоих примеров `examples/` даёт корректный `.nelmwave/planfile.yml`.
+- ⏳ `nelmwave up -l '...'` разворачивает подмножество релизов в правильном порядке, `down` сносит в
+  обратном, `diff` показывает изменения — реализовано и покрыто юнит-тестами с fake Applier;
+  **прогон на живом kind остаётся за владельцем** (в CI/песочнице кластера нет).
+- ✅ Values и store-files тянутся из ≥2 разных datasource-схем (локальные файлы + `.tpl` поверх
+  зарезолвленных артефактов через `ds`/`include`; gomplate-схемы `env:`/`http(s)://`/… доступны тем
+  же резолвером).
+- ✅ README с быстрым стартом и полным описанием схемы `nelmwave.yml`.
 
 ---
 

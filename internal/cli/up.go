@@ -25,6 +25,27 @@ func newUpCommand(g *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Deploy the selected releases in dependency order",
+		Long: `Install or upgrade the selected releases, respecting the dependency graph.
+
+up reads the plan written by build (pass --build to refresh it first) and never
+re-renders the manifest itself. Releases with no dependency between them are
+applied in parallel; --concurrency bounds how many run at once. A failure stops
+that branch of the graph — releases that depend on the failed one are skipped,
+unrelated branches keep going.
+
+Dependencies outside the selection: a strict need is an error, a non-strict one
+is dropped with a warning, and --include-needs pulls both back into the run.`,
+		Example: `  # Deploy everything
+  nelmwave up
+
+  # Deploy one tier, dragging in whatever it depends on
+  nelmwave up -l 'tier=frontend' --include-needs
+
+  # Rebuild the plan and apply it, two releases at a time
+  nelmwave up --build --concurrency 2
+
+  # Preview instead of applying (same as nelmwave diff)
+  nelmwave up --dry-run`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runUp(cmd, g, o)
 		},
