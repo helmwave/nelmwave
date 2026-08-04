@@ -20,7 +20,7 @@ releases:
       tier: db
       env: [[ getenv "ENV" "prod" ]]
     chart:
-      ref: bitnami/postgresql
+      name: bitnami/postgresql
       version: 15.x
     # values entries accept any of: {src: url}, bare url, with or without scheme.
     values:
@@ -35,7 +35,7 @@ releases:
     needs:
       - postgres
     chart:
-      ref: oci://registry.example.com/charts/api
+      name: oci://registry.example.com/charts/api
       version: 1.4.2
     values:
       - src: values/api.yml.tpl

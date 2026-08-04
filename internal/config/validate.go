@@ -8,7 +8,7 @@ import (
 
 // Validate checks a parsed Config for structural correctness:
 //   - release names (map keys) are non-empty;
-//   - every release selects exactly one chart source (chart.ref XOR universal);
+//   - every release selects exactly one chart source (chart.name XOR universal);
 //   - a namespace is set;
 //   - labels are valid Kubernetes labels;
 //   - needs reference existing releases, don't self-reference, and form a DAG
@@ -53,13 +53,13 @@ func Validate(cfg *Config) error {
 }
 
 func validateChartSource(name string, r Release) error {
-	hasRef := r.Chart.Ref != ""
+	hasChart := r.Chart.Name != ""
 	hasUniversal := r.Universal != nil
 	switch {
-	case !hasRef && !hasUniversal:
-		return fmt.Errorf("release %q: needs either chart.ref or a universal block", name)
-	case hasRef && hasUniversal:
-		return fmt.Errorf("release %q: chart.ref and universal are mutually exclusive", name)
+	case !hasChart && !hasUniversal:
+		return fmt.Errorf("release %q: needs either chart.name or a universal block", name)
+	case hasChart && hasUniversal:
+		return fmt.Errorf("release %q: chart.name and universal are mutually exclusive", name)
 	default:
 		return nil
 	}

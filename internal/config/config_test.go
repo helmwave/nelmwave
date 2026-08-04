@@ -43,7 +43,7 @@ releases:
 		t.Errorf("universal.replicas should default to 1, got %d", r.Universal.Replicas)
 	}
 	if !r.UsesUniversalChart() {
-		t.Errorf("release with universal block and no chart.ref should use universal chart")
+		t.Errorf("release with universal block and no chart.name should use universal chart")
 	}
 }
 
@@ -61,11 +61,11 @@ func TestValidate_OK(t *testing.T) {
 releases:
   db:
     namespace: data
-    chart: { ref: bitnami/postgresql }
+    chart: { name: bitnami/postgresql }
   api:
     namespace: app
     needs: [db]
-    chart: { ref: oci://r/api }
+    chart: { name: oci://r/api }
 `)
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("expected valid, got: %v", err)
@@ -79,28 +79,28 @@ func TestValidate_Errors(t *testing.T) {
 	}{
 		"no chart source": {
 			yml:  "releases:\n  a: {namespace: n}\n",
-			want: "either chart.ref or a universal block",
+			want: "either chart.name or a universal block",
 		},
 		"both chart and universal": {
 			yml: `
 releases:
   a:
     namespace: n
-    chart: { ref: r/a }
+    chart: { name: r/a }
     universal: { image: x }
 `,
 			want: "mutually exclusive",
 		},
 		"unknown need": {
-			yml:  "releases:\n  a: {namespace: n, chart: {ref: r/a}, needs: [ghost]}\n",
+			yml:  "releases:\n  a: {namespace: n, chart: { name: r/a}, needs: [ghost]}\n",
 			want: `needs unknown release "ghost"`,
 		},
 		"self need": {
-			yml:  "releases:\n  a: {namespace: n, chart: {ref: r/a}, needs: [a]}\n",
+			yml:  "releases:\n  a: {namespace: n, chart: { name: r/a}, needs: [a]}\n",
 			want: "needs itself",
 		},
 		"missing namespace": {
-			yml:  "releases:\n  a: {chart: {ref: r/a}}\n",
+			yml:  "releases:\n  a: {chart: { name: r/a}}\n",
 			want: "namespace is required",
 		},
 		"invalid label key": {
@@ -108,7 +108,7 @@ releases:
 releases:
   a:
     namespace: n
-    chart: { ref: r/a }
+    chart: { name: r/a }
     labels: { "bad label": v }
 `,
 			want: "label key",
@@ -131,9 +131,9 @@ releases:
 func TestValidate_DetectsCycle(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
-  a: {namespace: n, chart: {ref: r/a}, needs: [b]}
-  b: {namespace: n, chart: {ref: r/b}, needs: [c]}
-  c: {namespace: n, chart: {ref: r/c}, needs: [a]}
+  a: {namespace: n, chart: { name: r/a}, needs: [b]}
+  b: {namespace: n, chart: { name: r/b}, needs: [c]}
+  c: {namespace: n, chart: { name: r/c}, needs: [a]}
 `)
 	err := Validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "cycle") {
@@ -169,7 +169,7 @@ func TestParse_ValueRefForms(t *testing.T) {
 releases:
   a:
     namespace: n
-    chart: { ref: r/a }
+    chart: { name: r/a }
     values:
       - src: file://values/pg.yml.tpl
       - file://values/pg.yml.tpl
@@ -203,7 +203,7 @@ func TestParse_StoreRefBareForm(t *testing.T) {
 releases:
   a:
     namespace: n
-    chart: { ref: r/a }
+    chart: { name: r/a }
     store:
       - file://extra/netpol.yml
 `)

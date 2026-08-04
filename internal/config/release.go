@@ -26,9 +26,9 @@ type Release struct {
 
 // Chart identifies a chart source.
 type Chart struct {
-	// Ref is a helm-repo ref (repo/chart) or an OCI ref (oci://host/chart).
-	// Empty Ref together with a Universal block selects the built-in chart.
-	Ref string `json:"ref" yaml:"ref"`
+	// Name is a helm-repo chart (repo/chart) or an OCI ref (oci://host/chart).
+	// An empty Name together with a Universal block selects the built-in chart.
+	Name string `json:"name" yaml:"name"`
 	// Version is a chart version or constraint.
 	Version string `json:"version" yaml:"version"`
 }
@@ -47,7 +47,7 @@ type ReleaseOptions struct {
 }
 
 // UsesUniversalChart reports whether this release deploys the built-in chart:
-// it has a Universal block and no explicit chart ref.
+// it has a Universal block and no explicit chart name.
 func (r Release) UsesUniversalChart() bool {
-	return r.Universal != nil && r.Chart.Ref == ""
+	return r.Universal != nil && r.Chart.Name == ""
 }
