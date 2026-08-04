@@ -35,7 +35,7 @@ It produces, under --output (default .nelmwave/):
 
   planfile.yml            the resolved plan: releases, dependency edges, artifacts
   values/<release>/...    values files, in merge order
-  store/<release>/...     companion files declared in stores:
+  stores/<release>/...    companion files declared in stores:
 
 Values and store artifacts are rebuilt from scratch on every run, so sources
 removed from the manifest leave nothing behind. Within a release, stores resolve

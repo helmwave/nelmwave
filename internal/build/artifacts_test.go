@@ -54,7 +54,7 @@ func TestArtifacts_WritesOrderedValuesAndStore(t *testing.T) {
 	}
 
 	// Store file written under its alias.
-	if _, err := os.Stat(filepath.Join(out, "store", "db@data", "custom-netpol.yml")); err != nil {
+	if _, err := os.Stat(filepath.Join(out, "stores", "db@data", "custom-netpol.yml")); err != nil {
 		t.Errorf("store file missing: %v", err)
 	}
 }
@@ -147,11 +147,11 @@ func TestArtifacts_StoreWithoutAliasUsesIndexedBasename(t *testing.T) {
 		t.Fatalf("Artifacts: %v", err)
 	}
 	// no alias -> index-prefixed basename
-	if _, err := os.Stat(filepath.Join(out, "store", "r@n", "00-a.yml")); err != nil {
+	if _, err := os.Stat(filepath.Join(out, "stores", "r@n", "00-a.yml")); err != nil {
 		t.Errorf("aliasless store file should be 00-a.yml: %v", err)
 	}
 	// alias -> exact name
-	if _, err := os.Stat(filepath.Join(out, "store", "r@n", "named.yml")); err != nil {
+	if _, err := os.Stat(filepath.Join(out, "stores", "r@n", "named.yml")); err != nil {
 		t.Errorf("aliased store file should be named.yml: %v", err)
 	}
 }
@@ -203,7 +203,7 @@ func TestArtifacts_DatasourceCrossReferences(t *testing.T) {
 	}
 
 	// store -> store reference
-	got := readFile(t, filepath.Join(out, "store", "r@n", "combined.yml"))
+	got := readFile(t, filepath.Join(out, "stores", "r@n", "combined.yml"))
 	if got != "wrapped: bar" {
 		t.Errorf("store->store = %q", got)
 	}

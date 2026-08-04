@@ -24,8 +24,10 @@ const (
 	PlanfileName = "planfile.yml"
 	// ValuesDir holds merged per-release values (populated in a later milestone).
 	ValuesDir = "values"
-	// StoreDir holds resolved store files (populated in a later milestone).
-	StoreDir = "store"
+	// StoreDir holds resolved store files. It matches the "stores" datasource
+	// namespace, so a path under .nelmwave/ and a `ds "stores/x"` reference read
+	// the same way.
+	StoreDir = "stores"
 )
 
 // Plan is the flat, fully-resolved deployment plan persisted to disk.

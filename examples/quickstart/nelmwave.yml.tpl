@@ -55,7 +55,7 @@ releases:
     sets:
       replicaCount: 3
       image.tag: [[ getenv "API_TAG" "1.4.2" ]]
-    # store files are saved under .nelmwave/store/<uniqname>/; `name` names the
+    # store files are saved under .nelmwave/stores/<uniqname>/; `name` names the
     # file (default: index-prefixed basename). The internal layout is nelmwave's.
     stores:
       - { src: extra/netpol.yml, name: netpol.yml }

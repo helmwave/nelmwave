@@ -12,8 +12,7 @@ releases, and applies everything through nelm — in parallel, respecting order.
 
 > **Status: MVP.** `build`, `up`, `down` and `diff` are implemented, along with
 > datasource resolution, the dependency DAG, label selection, and chart
-> resolution against helm repositories and OCI registries. See
-> [`prompt.md`](./prompt.md) for the milestone breakdown.
+> resolution against helm repositories and OCI registries.
 
 ## Building
 
@@ -305,7 +304,7 @@ releases:
 .nelmwave/
   planfile.yml              resolved plan: releases, dependency edges, artifacts
   values/<uniqname>/...     values files, in merge order
-  store/<uniqname>/...      companion files from stores:
+  stores/<uniqname>/...     companion files from stores:
 ```
 
 Values and store artifacts are rebuilt from scratch on every run, so sources

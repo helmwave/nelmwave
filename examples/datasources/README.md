@@ -75,7 +75,7 @@ values/app.yml.tpl           # a value rendered FROM values/base.yml + the store
 
 ```sh
 nelmwave build
-cat .nelmwave/store/web@frontend/netpol.yml   # store <- store
+cat .nelmwave/stores/web@frontend/netpol.yml   # store <- store
 cat .nelmwave/values/web@frontend/app.yml     # value <- value, value <- store
 ```
 
