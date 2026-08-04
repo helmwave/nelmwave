@@ -127,3 +127,22 @@ func TestArtifacts_StoreWithoutAliasUsesIndexedBasename(t *testing.T) {
 		t.Errorf("aliased store file should be named.yml: %v", err)
 	}
 }
+
+func TestArtifacts_DuplicateNameRejected(t *testing.T) {
+	base := t.TempDir()
+	mustWrite(t, base, "a.yml", "x: 1\n")
+	mustWrite(t, base, "b.yml", "y: 2\n")
+	cfg := &config.Config{
+		Releases: map[string]config.Release{
+			"r@n": {
+				Chart:  config.Chart{Name: "c/r"},
+				Values: []config.FileRef{{Src: "a.yml", Name: "dup.yml"}, {Src: "b.yml", Name: "dup.yml"}},
+			},
+		},
+	}
+	p := plan.FromConfig(cfg)
+	err := Artifacts(context.Background(), cfg, p, base, filepath.Join(t.TempDir(), "out"), zap.NewNop())
+	if err == nil || !strings.Contains(err.Error(), "duplicate values name") {
+		t.Fatalf("expected duplicate-name error, got: %v", err)
+	}
+}

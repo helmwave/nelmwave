@@ -52,6 +52,7 @@ func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, o
 
 func resolveValues(ctx context.Context, res *datasource.Resolver, rc config.Release, key string, p *plan.Plan, valuesDir string, log *zap.Logger) error {
 	relDir := filepath.Join(valuesDir, sanitize(key))
+	seen := make(map[string]struct{})
 	var files []string
 	for _, ref := range rc.Values {
 		data, err := res.Resolve(ctx, ref.Src)
@@ -66,6 +67,10 @@ func resolveValues(ctx context.Context, res *datasource.Resolver, rc config.Rele
 		if err != nil {
 			return fmt.Errorf("release %q: values: %w", key, err)
 		}
+		if _, dup := seen[name]; dup {
+			return fmt.Errorf("release %q: duplicate values name %q", key, name)
+		}
+		seen[name] = struct{}{}
 		if err := writeFile(filepath.Join(relDir, filepath.FromSlash(name)), data); err != nil {
 			return err
 		}
@@ -129,6 +134,7 @@ func pathBase(s string) string {
 }
 
 func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Release, key, storeDir string, log *zap.Logger) error {
+	seen := make(map[string]struct{})
 	written := 0
 	for _, s := range rc.Stores {
 		data, err := res.Resolve(ctx, s.Src)
@@ -143,6 +149,10 @@ func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Relea
 		if err != nil {
 			return fmt.Errorf("release %q: store: %w", key, err)
 		}
+		if _, dup := seen[name]; dup {
+			return fmt.Errorf("release %q: duplicate store name %q", key, name)
+		}
+		seen[name] = struct{}{}
 		path := filepath.Join(storeDir, sanitize(key), filepath.FromSlash(name))
 		if err := writeFile(path, data); err != nil {
 			return err
