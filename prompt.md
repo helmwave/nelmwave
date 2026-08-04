@@ -163,6 +163,8 @@ github.com/helmwave/nelmwave
 │   ├── tpl/                # gomplate-рендер (.tpl → bytes), делимитеры [[ ]], контекст
 │   ├── datasource/         # свой резолвер поверх gomplate v5 (Resolve + MergeValues)
 │   ├── build/              # оркестрация: резолв datasources → артефакты .nelmwave/
+│   ├── graph/              # параллельный DAG-исполнитель (Run, Reverse)
+│   ├── release/            # Applier (интерфейс) + NelmApplier поверх nelm/pkg/action
 │   ├── plan/               # planfile: сборка, сериализация в .nelmwave/, чтение
 │   ├── graph/              # DAG: needs между релизами, топосорт, параллельный проход
 │   ├── release/            # адаптер к nelm/pkg/action (install/uninstall/plan/render)
@@ -477,9 +479,13 @@ releases:
    `.nelmwave/values/<uniqname>/<NN>-<label>.yml` и `store/<uniqname>/<dst>`, список `valuesFiles`
    в planfile. Тесты: `env:`, `.tpl`-рендер, sops-defer, missing→fs.ErrNotExist, optional-skip,
    порядок values.
-3. **M3 — DAG + nelm up/down.** `internal/graph` (топосорт, циклы), адаптер `internal/release`
-   поверх `action.ReleaseInstall/ReleaseUninstall`, параллельное исполнение, `up`/`down`.
-   Селекция по labels (`-l`). Интеграционный тест на kind/локальный кластер (или мок nelm-слоя).
+3. **M3 — DAG + nelm up/down. ✅ Готово.** `internal/graph` (параллельный DAG-исполнитель:
+   независимые ветки параллельно, fail-fast по ветке, `Reverse` для down), адаптер
+   `internal/release` (`Applier` + `NelmApplier` поверх `action.ReleaseInstall/Uninstall`),
+   `up`/`down` с селекцией `-l`, `--concurrency`, `--include-needs`, `--build`. Политика needs:
+   строгий need вне выборки → ошибка, нестрогий → warn+drop, `--include-needs` дотягивает.
+   k8s.io/* запинены на 0.29.x (nelm). Юнит-тесты на graph и deploy (fake Applier); реальный
+   деплой — на kind (вне автотестов без кластера).
 4. **M4 — diff/plan.** `action.ReleasePlanInstall`, `--detailed-exitcode`.
 5. **M5 — Универсальный chart. [ОТЛОЖЕНО — пост-MVP]** `go:embed` chart, confijer-values, набор
    ресурсов из §12, активация через `universal:`. В MVP не входит; `chart.name` обязателен.

@@ -98,13 +98,28 @@ func selectorOperator(op string) (selection.Operator, error) {
 	}
 }
 
-// DirectNeeds resolves the concrete set of release keys that release `self`
-// (with body r) depends on: explicit Releases that exist in the config, plus
-// releases matched by the inlined label selector. Self is excluded, the result
-// is sorted and deduplicated. It errors on an invalid label selector.
-func (c *Config) DirectNeeds(self string, r Release) ([]string, error) {
-	set := make(map[string]struct{})
-	addExplicit(set, c, self, r)
+// ResolvedNeed is one resolved dependency edge: the target release uniqname and
+// whether the dependency is strict (see NeedRelease.Strict). Label-matched
+// dependencies are never strict.
+type ResolvedNeed struct {
+	Uniqname string
+	Strict   bool
+}
+
+// ResolveNeeds resolves the concrete dependency edges of release `self` (body
+// r): explicit Releases that exist in the config (carrying their Strict flag)
+// plus releases matched by the inlined label selector (never strict). Self is
+// excluded; the result is sorted by uniqname and deduplicated, with strict
+// winning when a target appears both ways. It errors on an invalid selector.
+func (c *Config) ResolveNeeds(self string, r Release) ([]ResolvedNeed, error) {
+	strict := make(map[string]bool)
+	for need, opt := range r.Needs.Releases {
+		if need != self {
+			if _, ok := c.Releases[need]; ok {
+				strict[need] = strict[need] || opt.Strict
+			}
+		}
+	}
 	if !r.Needs.labelsEmpty() {
 		sel, err := r.Needs.labelSelector()
 		if err != nil {
@@ -112,41 +127,53 @@ func (c *Config) DirectNeeds(self string, r Release) ([]string, error) {
 		}
 		for key, other := range c.Releases {
 			if key != self && other.Matches(sel) {
-				set[key] = struct{}{}
+				if _, ok := strict[key]; !ok {
+					strict[key] = false
+				}
 			}
 		}
 	}
-	return sortedSet(set), nil
-}
 
-// directNeedKeys is the error-tolerant variant used by cycle detection: it
-// skips an invalid selector (its error is reported separately by Validate).
-func (c *Config) directNeedKeys(self string, r Release) []string {
-	keys, err := c.DirectNeeds(self, r)
-	if err != nil {
-		set := make(map[string]struct{})
-		addExplicit(set, c, self, r)
-		return sortedSet(set)
+	keys := make([]string, 0, len(strict))
+	for k := range strict {
+		keys = append(keys, k)
 	}
-	return keys
+	sort.Strings(keys)
+	out := make([]ResolvedNeed, len(keys))
+	for i, k := range keys {
+		out[i] = ResolvedNeed{Uniqname: k, Strict: strict[k]}
+	}
+	return out, nil
 }
 
-// addExplicit adds the existing, non-self explicit release dependencies to set.
-func addExplicit(set map[string]struct{}, c *Config, self string, r Release) {
+// DirectNeeds returns just the resolved dependency uniqnames (sorted).
+func (c *Config) DirectNeeds(self string, r Release) ([]string, error) {
+	resolved, err := c.ResolveNeeds(self, r)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, len(resolved))
+	for i, n := range resolved {
+		keys[i] = n.Uniqname
+	}
+	return keys, nil
+}
+
+// directNeedKeys is the error-tolerant variant used by cycle detection: on an
+// invalid selector (reported separately by Validate) it falls back to explicit
+// needs only.
+func (c *Config) directNeedKeys(self string, r Release) []string {
+	if keys, err := c.DirectNeeds(self, r); err == nil {
+		return keys
+	}
+	keys := make([]string, 0, len(r.Needs.Releases))
 	for need := range r.Needs.Releases {
 		if need != self {
 			if _, ok := c.Releases[need]; ok {
-				set[need] = struct{}{}
+				keys = append(keys, need)
 			}
 		}
 	}
-}
-
-func sortedSet(set map[string]struct{}) []string {
-	out := make([]string, 0, len(set))
-	for k := range set {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	sort.Strings(keys)
+	return keys
 }

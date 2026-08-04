@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -46,7 +47,13 @@ func runBuild(cmd *cobra.Command, o *buildOptions) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("building", zap.String("file", manifest), zap.String("output", o.output))
+	return buildPlan(ctx, manifest, o.output, logger)
+}
+
+// buildPlan renders and validates manifest, resolves its datasources, and
+// writes the plan and artifacts to output. Shared by `build` and `up --build`.
+func buildPlan(ctx context.Context, manifest, output string, logger *zap.Logger) error {
+	logger.Info("building", zap.String("file", manifest), zap.String("output", output))
 
 	src, err := os.ReadFile(manifest)
 	if err != nil {
@@ -74,16 +81,16 @@ func runBuild(cmd *cobra.Command, o *buildOptions) error {
 	p := plan.FromConfig(cfg)
 
 	// Resolve values/store datasources relative to the manifest directory.
-	if err := build.Artifacts(ctx, cfg, p, filepath.Dir(manifest), o.output, logger); err != nil {
+	if err := build.Artifacts(ctx, cfg, p, filepath.Dir(manifest), output, logger); err != nil {
 		return err
 	}
 
-	if err := p.Write(o.output); err != nil {
+	if err := p.Write(output); err != nil {
 		return err
 	}
 
 	logger.Info("plan written",
-		zap.String("path", filepath.Join(o.output, plan.PlanfileName)),
+		zap.String("path", filepath.Join(output, plan.PlanfileName)),
 		zap.Int("releases", len(p.Releases)),
 	)
 	return nil

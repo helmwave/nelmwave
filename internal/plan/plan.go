@@ -35,12 +35,19 @@ type Plan struct {
 	Releases     map[string]Release           `yaml:"releases"`
 }
 
+// Need is one resolved dependency edge of a plan release: the target uniqname
+// and whether the dependency is strict.
+type Need struct {
+	Uniqname string `yaml:"uniqname"`
+	Strict   bool   `yaml:"strict,omitempty"`
+}
+
 // Release is a plan entry for a single release, keyed by its uniqname
 // ("name[@namespace[@kubecontext]]") in Plan.Releases. It mirrors config.Release
-// but adds resolved artifact paths filled by later build stages.
+// but stores resolved dependency edges and artifact paths.
 type Release struct {
 	Labels  map[string]string     `yaml:"labels,omitempty"`
-	Needs   config.Needs          `yaml:"needs,omitempty"`
+	Needs   []Need                `yaml:"needs,omitempty"`
 	Chart   config.Chart          `yaml:"chart,omitempty"`
 	Values  []config.FileRef      `yaml:"values,omitempty"`
 	Store   []config.FileRef      `yaml:"store,omitempty"`
@@ -62,7 +69,7 @@ func FromConfig(cfg *config.Config) *Plan {
 	for name, r := range cfg.Releases {
 		p.Releases[name] = Release{
 			Labels:  r.Labels,
-			Needs:   r.Needs,
+			Needs:   resolveNeeds(cfg, name, r),
 			Chart:   r.Chart,
 			Values:  r.Values,
 			Store:   r.Store,
@@ -70,6 +77,21 @@ func FromConfig(cfg *config.Config) *Plan {
 		}
 	}
 	return p
+}
+
+// resolveNeeds flattens a release's needs (explicit + label-matched) into plan
+// edges. Selector errors are impossible after config.Validate; if one slips
+// through, explicit needs still resolve (see config.ResolveNeeds).
+func resolveNeeds(cfg *config.Config, name string, r config.Release) []Need {
+	resolved, err := cfg.ResolveNeeds(name, r)
+	if err != nil || len(resolved) == 0 {
+		return nil
+	}
+	needs := make([]Need, len(resolved))
+	for i, n := range resolved {
+		needs[i] = Need{Uniqname: n.Uniqname, Strict: n.Strict}
+	}
+	return needs
 }
 
 // ReleaseNames returns the release names in deterministic (sorted) order.

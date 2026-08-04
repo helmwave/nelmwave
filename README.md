@@ -10,10 +10,11 @@ manifest: it renders the manifest through gomplate, resolves values and
 companion files from arbitrary datasources, builds a dependency graph between
 releases, and applies everything through nelm — in parallel, respecting order.
 
-> **Status: early development (M2).** `build` renders a manifest, validates it,
-> resolves values/store datasources (deep-merging values), and writes a
-> self-contained plan plus artifacts to `.nelmwave/`. `up`/`down`/`diff` are
-> wired but not yet implemented — see the milestones in [`prompt.md`](./prompt.md).
+> **Status: early development (M3).** `build` renders/validates a manifest and
+> resolves values/store datasources into `.nelmwave/`. `up` and `down` select
+> releases by label, build the dependency DAG, and apply them through nelm —
+> in parallel, respecting order (`down` in reverse). `diff` is next — see the
+> milestones in [`prompt.md`](./prompt.md).
 
 ## Building
 
@@ -61,15 +62,17 @@ internal/
   cli/               # cobra commands: build, up, down, diff
   config/            # nelmwave.yml schema, confijer load, validation, selectors
   tpl/               # gomplate v5 rendering ([[ ]] delimiters)
-  datasource/        # resolve values/store refs (gomplate v5) + deep-merge
+  datasource/        # resolve values/store refs (gomplate v5)
   build/             # resolve a config's datasources into .nelmwave/ artifacts
   plan/              # .nelmwave/ plan build/read/write
+  graph/             # concurrent dependency-DAG executor
+  release/           # Applier over nelm (install/uninstall)
   log/               # zap setup (auto console/json)
   version/           # build-time version info
 ```
 
-Further packages (`graph`, `release`, `kubedep`) land on their respective
-milestones.
+Further packages (`kubedep` for resource-level ordering) land on their
+respective milestones.
 
 > **Note on confijer:** the manifest loader binds keys via `json` struct tags
 > (case-insensitively), not `yaml` tags. Config structs therefore carry both
