@@ -6,6 +6,22 @@
 > и pkg.go.dev, не полагайся слепо на сигнатуры из этого документа**. Решения, помеченные как
 > **[FIXED]**, приняты владельцем и менять их нельзя без явного согласования.
 
+> **Уточнения, принятые в ходе разработки** (владелец, 2026-08-04). Имеют приоритет над
+> исходными формулировками ниже, где расходятся:
+> - **Коллекции — мапы, не списки.** `registries` (ключ = host), `repositories` (ключ = name),
+>   `releases` (ключ = **uniqname** `name[@namespace[@kubecontext]]`). ns/ctx опциональны — если
+>   опущены, берётся текущий kube-context/его дефолтный namespace (резолв на apply-этапе).
+>   Value-структуры не содержат поля-идентификатора. kube-context может содержать `@`.
+> - **`chart.name`** вместо `chart.ref`.
+> - **`values` и `store` — единый тип `FileRef`** (`Src, Dst, Optional, Strict`), принимает 4
+>   эквивалентные формы (строка/мапа × со схемой/без; нет схемы или `file://` → голый путь).
+> - **`needs` — структура**: `needs.releases` (мапа по uniqname → `{strict, …}`) +
+>   `needs.labels` (k8s `LabelSelector`: `matchLabels`+`matchExpressions`). Зависимость — объединение.
+> - **Datasources — свой резолвер** на gomplate v5 (fileref v0.2.0 непригоден как библиотека).
+> - **SOPS отложен**: в MVP только `.yml`/`.yml.tpl`; `.yml.sops` → «not supported yet».
+> - **confijer биндит по `json`-тегу** (не `yaml`) через `EqualFold`; в config-структурах — двойные
+>   теги `json`+`yaml` (json для загрузки, yaml для сериализации planfile).
+
 ---
 
 ## 0. Роль агента
@@ -46,9 +62,9 @@ nelm — параллельно, с учётом порядка.
 | Шаблонизатор | **gomplate v5 как Go-библиотека**, делимитеры по умолчанию **`[[ ]]`** |
 | Логгер | **[uber-go/zap](https://github.com/uber/zap)** |
 | Конфиг-загрузчик | **[helmwave/confijer](https://github.com/helmwave/confijer)** (defaults по Go-типам через reflection) |
-| Datasources (values, store files) | **[helmwave/fileref](https://github.com/helmwave/fileref)** поверх gomplate DataSources |
-| Схема nelmwave.yml | **новая**, вдохновлённая helmwave (НЕ drop-in совместимость) |
-| Модель needs | **DAG с параллельностью** (топосорт + concurrent-исполнение независимых веток) |
+| Datasources (values, store files) | **собственный резолвер `internal/datasource` поверх gomplate v5** (fileref v0.2.0 непригоден как библиотека — `package main`, gomplate v4; см. §3.4) |
+| Схема nelmwave.yml | **новая**, вдохновлённая helmwave (НЕ drop-in совместимость). Коллекции — **мапы по идентификатору**, релиз — **uniqname** `name[@namespace[@kubecontext]]` (см. §5) |
+| Модель needs | **DAG с параллельностью** (топосорт + concurrent-исполнение независимых веток). Зависимости — по uniqname (`needs.releases`) и по k8s-селектору (`needs.labels`) |
 | Селектор | **Kubernetes-style label selector** (`app=api,env in (prod,stg),tier!=db`) |
 | Хранилище build | каталог **`.nelmwave/`** (planfile + распакованные charts/values/store-files) |
 | Универсальный chart | **вшит в бинарь** через `go:embed`, конфигурируется через confijer-схему |
@@ -95,17 +111,22 @@ API: `UnmarshalYAML(data, out)` / `UnmarshalYAMLFile(path, out)`.
 Приоритет значений (низший→высший): zero → тег `default:"..."` → рекурсивные дефолты типа →
 явные значения по точному пути. Проектируй структуры конфигов с оглядкой на эту модель.
 
-### 3.4 fileref (`github.com/helmwave/fileref`)
-Адаптер gomplate DataSources: «читает URL scheme и отдаёт контент». Движок для **Values** и
-**StoreFiles**. Поведение по расширению источника:
+### 3.4 datasource-резолвер (`internal/datasource`, поверх gomplate v5)
+> **Изменено:** fileref v0.2.0 непригоден как библиотека (корень — `package main`, логика в
+> `internal/`, ничего не возвращает как `[]byte`, тянет gomplate **v4**, SOPS-ветка сломана).
+> Поэтому вместо fileref — **собственный резолвер поверх gomplate v5**, сохраняющий тот же контракт.
+
+Движок для **Values** и **StoreFiles**: «читает URL scheme и отдаёт контент как `[]byte`».
+Поведение по расширению источника:
 - `*.yml` / `*.yaml` — copy как есть;
-- `*.yml.tpl` — рендер как шаблон (gomplate) перед использованием;
-- `*.yml.sops` — расшифровка SOPS перед использованием.
+- `*.yml.tpl` — рендер как шаблон (gomplate, делимитеры `[[ ]]`) перед использованием;
+- `*.yml.sops` — **отложено** (в MVP → ошибка «not supported yet»; см. §20 Q5).
 
 Пользователь указывает источник в поле `src` как URL с любой схемой gomplate
 (`file://`, `env:`, `vault://`, `aws+sm://`, `aws+smp://`, `s3://`, `http(s)://`, `git://`,
-`consul://`, …). **Поддержать все датасорсы, которые даёт gomplate/fileref** [FIXED] — не хардкодить
-список, а делегировать резолв в fileref.
+`consul://`, …), либо голым путём (без схемы = локальный файл). **Поддержать все датасорсы,
+которые даёт gomplate v5** [FIXED] — не хардкодить список, а делегировать резолв в gomplate.
+Форма `src` нормализуется на этапе parse: 4 эквивалентных написания, `file://`↔голый путь (см. §9).
 
 ### 3.5 zap
 Логирование во всём приложении.
@@ -127,13 +148,18 @@ github.com/helmwave/nelmwave
 ├── internal/
 │   ├── cli/                # cobra-команды: build, up, down, diff
 │   ├── config/             # схема nelmwave.yml, загрузка через confijer + gomplate
-│   │   ├── config.go       # корневой Config
-│   │   ├── release.go      # Release
+│   │   ├── config.go       # корневой Config (мапы по идентификатору)
+│   │   ├── release.go      # Release + Chart{Name,Version}
+│   │   ├── uniqname.go     # Uniqname name[@ns[@ctx]]: parse/канонизация ключей
+│   │   ├── needs.go        # Needs{Releases, Labels}, LabelSelector, DirectNeeds
+│   │   ├── fileref.go      # FileRef (единый для values и store)
 │   │   ├── repository.go   # Repository (helm repo)
 │   │   ├── registry.go     # Registry (OCI)
+│   │   ├── load.go         # Parse: gomplate-нормализация + confijer + канонизация
+│   │   ├── validate.go     # валидация + детект циклов (вкл. label-рёбра)
 │   │   └── selector.go     # k8s label selector parsing/matching
 │   ├── tpl/                # gomplate-рендер (.tpl → bytes), делимитеры [[ ]], контекст
-│   ├── datasource/         # обёртка над fileref для values и store-files
+│   ├── datasource/         # свой резолвер поверх gomplate v5 для values и store-files
 │   ├── plan/               # planfile: сборка, сериализация в .nelmwave/, чтение
 │   ├── graph/              # DAG: needs между релизами, топосорт, параллельный проход
 │   ├── release/            # адаптер к nelm/pkg/action (install/uninstall/plan/render)
@@ -156,57 +182,61 @@ github.com/helmwave/nelmwave
 
 ### 5.1 Пример целевой схемы (ориентир, финализируй в коде)
 
+Коллекции — **мапы по идентификатору**: `registries` (ключ = host), `repositories` (ключ = name),
+`releases` (ключ = **uniqname** `name[@namespace[@kubecontext]]`). ns/ctx в ключе опциональны.
+
 ```yaml
 # nelmwave.yml.tpl  — рендерится gomplate (делимитеры [[ ]])
 project: my-platform
 
 registries:
-  - host: registry.example.com
+  registry.example.com:                 # ключ = host
     username: [[ .Env.REGISTRY_USER ]]
     password: [[ .Env.REGISTRY_PASS ]]
 
 repositories:
-  - name: bitnami
+  bitnami:                              # ключ = name
     url: https://charts.bitnami.com/bitnami
     # переопределение helm repo config / смежных настроек — см. §13
     force_update: true
 
 releases:
-  - name: postgres
-    namespace: data
+  postgres@data:                        # ключ = uniqname name@namespace[@kubecontext]
     labels:
       app: postgres
       tier: db
       env: prod
     chart:
-      ref: bitnami/postgresql        # helm repo chart
+      name: bitnami/postgresql          # helm repo chart (было chart.ref)
       version: 15.x
     values:
-      - src: file://values/pg.yml.tpl        # fileref: render перед мёрджем
-      - src: vault://secret/pg#password      # любой datasource
-        # опционально: strict / optional
+      - values/pg.yml.tpl               # FileRef: любая из 4 форм (см. §9)
+      - src: vault://secret/pg#password # любой datasource; можно strict/optional
 
-  - name: api
-    namespace: app
+  api@app:
     labels:
       app: api
       tier: backend
       env: prod
-    needs:
-      - postgres                      # needs МЕЖДУ релизами (DAG)
+    needs:                             # структура: releases и/или labels (см. §11)
+      releases:
+        postgres@data:
+          strict: true
     chart:
-      ref: oci://registry.example.com/charts/api    # OCI
+      name: oci://registry.example.com/charts/api    # OCI
       version: 1.4.2
     values:
-      - src: file://values/api.yml.tpl
+      - src: values/api.yml.tpl
     store:
-      - src: file://extra/netpol.yml          # StoreFiles (fileref) → .nelmwave/
+      - src: extra/netpol.yml          # StoreFiles → .nelmwave/
         dst: manifests/netpol.yml
 
-  - name: cache
-    namespace: app
+  cache@app:
     labels: { app: redis, tier: cache, env: prod }
-    # без chart.ref → используется ВСТРОЕННЫЙ универсальный chart (§12)
+    needs:
+      labels:                          # k8s LabelSelector: ждать все релизы-БД
+        matchLabels: { tier: db }
+    # без chart.name → используется ВСТРОЕННЫЙ универсальный chart (§12)
     universal:
       image: redis:7
       service:
@@ -214,15 +244,21 @@ releases:
       # confijer-схема универсального chart'а
 ```
 
-### 5.2 Структуры (confijer-friendly)
-- Корень `Config`: `Project string`, `Registries []Registry`, `Repositories []Repository`,
-  `Releases []Release`, глобальные `Values []ValueRef`.
-- `Release`: `Name`, `Namespace`, `Labels map[string]string`, `Needs []string`,
-  `Chart` (`Ref`, `Version`), `Values []ValueRef`, `Store []StoreRef`, `Universal *UniversalValues`,
-  плюс проброс нужных nelm-опций (timeout, atomic/auto-rollback, wait, create-namespace и т.п.).
-- `ValueRef` / `StoreRef`: `Src string` (URL для fileref), `Dst string` (для store), флаги
-  `Optional`, `Strict`, `RenderInline` (если нужно принудительно рендерить).
-- Проектируй теги `default:"..."` там, где confijer должен подставлять дефолты.
+### 5.2 Структуры (confijer-friendly) — реализовано
+- Корень `Config`: `Project string`, `Registries map[string]Registry` (ключ=host),
+  `Repositories map[string]Repository` (ключ=name), `Releases map[string]Release`
+  (ключ=uniqname), глобальные `Values []FileRef`.
+- Идентичность релиза — тип **`Uniqname{Name, Namespace, KubeContext}`** (парсинг/канонизация
+  ключа и `needs.releases`). Поля-идентификатора в value-структурах НЕТ.
+- `Release`: `Labels map[string]string`, `Needs Needs`, `Chart{Name, Version}`,
+  `Values []FileRef`, `Store []FileRef`, `Universal *UniversalValues`, `Options ReleaseOptions`
+  (проброс nelm-опций: timeout, autoRollback≈atomic, createNamespace, …).
+- **`FileRef`** (единый для values и store): `Src`, `Dst` (только store), `Optional`, `Strict`.
+  Принимает 4 формы (строка/мапа × со схемой/без).
+- **`Needs`**: `Releases map[string]NeedRelease` (`{Strict, …}`) + `Labels *LabelSelector`
+  (`matchLabels`/`matchExpressions`, семантика k8s).
+- **Теги — двойные `json:"..." yaml:"..."`**: confijer биндит по `json`, planfile пишется по `yaml`.
+  Теги `default:"..."` — там, где нужен дефолт (напр. `createNamespace:"true"`, `replicas:"1"`).
 
 ### 5.3 Контекст gomplate для `nelmwave.yml.tpl`
 Согласуй минимальный набор: `.Env` (окружение), `.Project`, служебные функции gomplate
@@ -236,10 +272,11 @@ releases:
 `nelmwave build`:
 1. Найти `nelmwave.yml.tpl` (или `nelmwave.yml`, если без шаблона). Рендер через gomplate (`[[ ]]`).
 2. Загрузить результат в `config.Config` через confijer.
-3. Валидация: уникальность имён релизов, существование целей `needs`, отсутствие циклов в DAG,
-   корректность label-ключей/значений, наличие chart.ref ИЛИ universal.
-4. Для каждого релиза: резолв **values** и **store files** через fileref (render/copy/sops),
-   deep-merge values (§9).
+3. Валидация: уникальность uniqname (гарантируется ключами мапы), существование целей `needs`,
+   отсутствие циклов в DAG (вкл. label-рёбра), корректность label-ключей/значений,
+   `chart.name` XOR `universal`.
+4. Для каждого релиза: резолв **values** и **store files** через `internal/datasource`
+   (render/copy; sops отложен), deep-merge values (§9).
 5. (Опц., но желательно) распаковать/подготовить charts локально для воспроизводимости в CI.
 6. Записать **planfile** и артефакты в `.nelmwave/`:
    ```
@@ -288,21 +325,25 @@ releases:
 
 ---
 
-## 9. Values (fileref/gomplate datasources)
+## 9. Values (собственный datasource-резолвер поверх gomplate v5)
 
-- Каждый `ValueRef.Src` — URL, резолвится через **fileref** (поддержать **все** datasource'ы).
-- По расширению источника: `.yml`→copy, `.yml.tpl`→gomplate-render, `.yml.sops`→SOPS-decrypt.
+- Каждый `FileRef.Src` — путь или URL, резолвится через `internal/datasource` (все схемы gomplate v5).
+- По расширению источника: `.yml`→copy, `.yml.tpl`→gomplate-render, `.yml.sops`→**отложено** (§20 Q5).
+- **4 эквивалентные формы записи** (нормализуются при parse): `{src: url}`, голая строка `url`,
+  со схемой или без. Нет схемы или `file://` → голый локальный путь; прочие схемы (`env:`,
+  `vault://`, `s3://`, `http(s)://`, `git://`, …) — verbatim.
 - **Порядок мёрджа** [FIXED]: глобальные `Values` (корень config) → per-release `Values`,
   **deep-merge**, последний источник побеждает (override). Скаляры/массивы — replace, мапы — merge.
-- Результат — `.nelmwave/values/<release>.yml`, передаётся в nelm как values релиза.
+- Результат — `.nelmwave/values/<uniqname>.yml`, путь пишется в planfile (`valuesFile`), передаётся
+  в nelm как values релиза.
 - Флаги источника: `optional` (нет файла → пропустить, не падать), `strict`.
 
 ---
 
-## 10. StoreFiles (fileref)
+## 10. StoreFiles (тот же резолвер)
 
-- `Release.Store []StoreRef{ Src, Dst, ... }` — произвольные файлы, резолвятся через fileref
-  (те же правила copy/render/sops) и складываются в `.nelmwave/store/<release>/<Dst>`.
+- `Release.Store []FileRef{ Src, Dst, ... }` — произвольные файлы, резолвятся тем же резолвером
+  (правила copy/render; sops отложен) и складываются в `.nelmwave/store/<uniqname>/<Dst>`.
 - Назначение: доп. манифесты и сопутствующие артефакты релиза (напр. NetworkPolicy, CRD, конфиги),
   которые нужно приложить/сохранить рядом с планом. Реши политику применения:
   - как дополнительные манифесты, подаваемые nelm вместе с релизом, **или**
@@ -314,8 +355,15 @@ releases:
 ## 11. Needs (зависимости)
 
 ### 11.1 Между релизами → DAG [FIXED]
-- `Release.Needs []string` — имена релизов, которые должны быть применены раньше.
-- Построй ориентированный граф, проверь ацикличность (иначе ошибка build), топосорт.
+- `Release.Needs` — **структура** (не `[]string`):
+  - `needs.releases map[uniqname]NeedRelease` — явные зависимости по uniqname; значение
+    расширяемое (сейчас `strict`).
+  - `needs.labels *LabelSelector` — k8s-селектор (`matchLabels`+`matchExpressions`); зависимость =
+    все релизы, попавшие под селектор. Пустой/nil селектор = ничего (НЕ «все»).
+  - Итог: релиз зависит от **объединения** `releases` и label-матчей. `Config.DirectNeeds()`
+    резолвит конкретный набор ключей.
+- Построй ориентированный граф, проверь ацикличность (иначе ошибка build; цикл учитывает и
+  label-рёбра), топосорт.
 - `up`: параллельно исполняй независимые вершины, соблюдая рёбра (errgroup + семафор + ожидание
   завершения предков). `down`: обратный порядок.
 
@@ -335,7 +383,7 @@ releases:
 ## 12. Встроенный универсальный chart [FIXED]
 
 - Обычный Helm-chart, **вшитый в бинарь** через `go:embed` (каталог `internal/chart/universal/`).
-- Активируется, когда у релиза **не задан** `chart.ref`, но задан блок `universal:`.
+- Активируется, когда у релиза **не задан** `chart.name`, но задан блок `universal:`.
 - Values универсального chart'а описываются **confijer-схемой**: top-level тип задаёт дефолты для
   всех релизов, каждый релиз переопределяет точечно (используй модель приоритетов confijer).
 - **Охват ресурсов на старте** (реализуй именно этот набор, расширяемо):
@@ -405,11 +453,13 @@ releases:
 
 ## 18. Milestones (порядок работ)
 
-1. **M1 — Скелет + конфиг.** `go.mod` (Go 1.26), cobra-скелет, zap, `internal/config` со схемой,
-   confijer-загрузка, gomplate-рендер `nelmwave.yml.tpl` (`[[ ]]`). Команда `build` рендерит и
-   валидирует, пишет `planfile.yml` в `.nelmwave/`. Тесты на парсинг/валидацию/рендер.
-2. **M2 — Datasources.** Интеграция fileref: values (deep-merge, порядок) + store files. Артефакты
-   в `.nelmwave/`. Тесты с `file://`, `env:` (+ mock хотя бы одного секрет-стора).
+1. **M1 — Скелет + конфиг. ✅ Готово.** `go.mod` (Go 1.26), cobra-скелет, zap, `internal/config`
+   со схемой (мапы/uniqname/FileRef/Needs), confijer-загрузка, gomplate-рендер `nelmwave.yml.tpl`
+   (`[[ ]]`). Команда `build` рендерит, валидирует (chart.name XOR universal, needs/циклы, labels),
+   пишет `planfile.yml` в `.nelmwave/`. Тесты на парсинг/валидацию/рендер/канонизацию.
+2. **M2 — Datasources.** Собственный `internal/datasource` поверх gomplate v5 (НЕ fileref): values
+   (deep-merge, порядок) + store files, запись в `.nelmwave/values|store/`, заполнение `valuesFile`
+   в planfile. Тесты с голым путём/`file://`, `env:`, `.yml.tpl`-рендером (+ mock секрет-стора).
 3. **M3 — DAG + nelm up/down.** `internal/graph` (топосорт, циклы), адаптер `internal/release`
    поверх `action.ReleaseInstall/ReleaseUninstall`, параллельное исполнение, `up`/`down`.
    Селекция по labels (`-l`). Интеграционный тест на kind/локальный кластер (или мок nelm-слоя).
@@ -441,13 +491,13 @@ releases:
 
 Отметь и задай, если всплывёт по ходу (не блокируйся — предложи дефолт и продолжай):
 1. Политика при `needs` в отфильтрованный релиз: ошибка vs авто-подтягивание (`--include-needs`)?
-   *(дефолт: ошибка)*
+   *(дефолт: ошибка. Уточняется: `needs.releases.<uniqname>.strict` даёт per-need управление.)*
 2. StoreFiles: только артефакты vs авто-применение доп. манифестов? *(дефолт: артефакты)*
 3. Множественные `-l`: AND vs отдельные группы?
 4. Точные nelm-опции для repo/registry override и аннотаций ресурсных зависимостей — что реально
    принимает API текущей версии nelm.
-5. Нужен ли SOPS-encrypt/decrypt как отдельные команды (nelm умеет secrets) или только пассивная
-   расшифровка через fileref.
+5. SOPS: **решено — отложить.** В MVP только `.yml`/`.yml.tpl`; `.yml.sops` → «not supported yet».
+   Отдельных encrypt/decrypt-команд нет. (Пассивная расшифровка вернётся позже, без fileref.)
 
 ---
 
@@ -459,4 +509,8 @@ releases:
 - Селекторы — **k8s-style**, парсинг через `apimachinery/labels`.
 - Артефакты сборки — только в **`.nelmwave/`**; runtime-команды не перерендеривают шаблоны.
 - Всё логируй через **zap**; весь I/O — через **context**.
-- Внешние API (nelm/gomplate/confijer/fileref) — **сверяй с исходниками**, версии фиксируй в `go.mod`.
+- Внешние API (nelm/gomplate/confijer) — **сверяй с исходниками**, версии фиксируй в `go.mod`.
+- **fileref НЕ используется** (v0.2.0 непригоден как библиотека) — datasources через свой резолвер
+  на gomplate v5 (§3.4). Не тащить `metav1` ради мелочей — предпочитать лёгкие пакеты apimachinery
+  (`pkg/labels`, `pkg/selection`).
+- config-структуры — **двойные теги `json`+`yaml`** (confijer биндит по json; см. §5.2).
