@@ -1,7 +1,9 @@
 # Quickstart nelmwave manifest, rendered by gomplate (double-square-bracket delimiters).
 project: my-platform
 
-# Maps keyed by identity: registries by host, repositories/releases by name.
+# Maps keyed by identity: registries by host, repositories by name, releases by
+# uniqname "name[@namespace[@kubecontext]]" (namespace/context optional — the
+# current kube-context is used when omitted).
 registries:
   registry.example.com:
     username: [[ getenv "REGISTRY_USER" "anonymous" ]]
@@ -13,8 +15,7 @@ repositories:
     force_update: true
 
 releases:
-  postgres:
-    namespace: data
+  postgres@data:
     labels:
       app: postgres
       tier: db
@@ -26,14 +27,13 @@ releases:
     values:
       - values/pg.yml.tpl
 
-  api:
-    namespace: app
+  api@app:
     labels:
       app: api
       tier: backend
       env: [[ getenv "ENV" "prod" ]]
     needs:
-      - postgres
+      - postgres@data
     chart:
       name: oci://registry.example.com/charts/api
       version: 1.4.2
@@ -43,8 +43,7 @@ releases:
       - src: extra/netpol.yml
         dst: manifests/netpol.yml
 
-  cache:
-    namespace: app
+  cache@app:
     labels: { app: redis, tier: cache, env: prod }
     universal:
       image: redis:7

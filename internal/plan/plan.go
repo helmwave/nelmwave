@@ -36,11 +36,10 @@ type Plan struct {
 	Releases     map[string]Release           `yaml:"releases"`
 }
 
-// Release is a plan entry for a single release, keyed by name in Plan.Releases.
-// It mirrors config.Release but adds resolved artifact paths filled by later
-// build stages.
+// Release is a plan entry for a single release, keyed by its uniqname
+// ("name[@namespace[@kubecontext]]") in Plan.Releases. It mirrors config.Release
+// but adds resolved artifact paths filled by later build stages.
 type Release struct {
-	Namespace string                  `yaml:"namespace"`
 	Labels    map[string]string       `yaml:"labels,omitempty"`
 	Needs     []string                `yaml:"needs,omitempty"`
 	Chart     config.Chart            `yaml:"chart,omitempty"`
@@ -64,7 +63,6 @@ func FromConfig(cfg *config.Config) *Plan {
 	}
 	for name, r := range cfg.Releases {
 		p.Releases[name] = Release{
-			Namespace: r.Namespace,
 			Labels:    r.Labels,
 			Needs:     r.Needs,
 			Chart:     r.Chart,

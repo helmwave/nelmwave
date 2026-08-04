@@ -36,7 +36,41 @@ func Parse(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("decode nelmwave config: %w", err)
 	}
 	cfg.canonicalizeSources()
+	if err := cfg.canonicalizeUniqnames(); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+// canonicalizeUniqnames normalizes every release map key and every needs entry
+// to its canonical "name[@namespace[@kubecontext]]" form, so equivalent
+// spellings collapse and needs can be matched by exact key. It errors on an
+// invalid key or on two keys that collapse to the same identity.
+func (c *Config) canonicalizeUniqnames() error {
+	if len(c.Releases) == 0 {
+		return nil
+	}
+	canon := make(map[string]Release, len(c.Releases))
+	for key, r := range c.Releases {
+		u, err := ParseUniqname(key)
+		if err != nil {
+			return err
+		}
+		ck := u.String()
+		if _, dup := canon[ck]; dup {
+			return fmt.Errorf("release %q collides with another release after normalization to %q", key, ck)
+		}
+		for i, need := range r.Needs {
+			nu, err := ParseUniqname(need)
+			if err != nil {
+				return fmt.Errorf("release %q: %w", ck, err)
+			}
+			r.Needs[i] = nu.String()
+		}
+		canon[ck] = r
+	}
+	c.Releases = canon
+	return nil
 }
 
 // normalizeRefLists rewrites bare-string entries in the top-level values list

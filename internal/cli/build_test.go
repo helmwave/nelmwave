@@ -14,8 +14,7 @@ func TestBuildCommand_EndToEnd(t *testing.T) {
 	const src = `
 project: demo
 releases:
-  cache:
-    namespace: app
+  cache@app:
     labels: { app: redis }
     universal:
       image: redis:[[ getenv "REDIS_TAG" "7" ]]
@@ -39,7 +38,7 @@ releases:
 	if p.Project != "demo" || len(p.Releases) != 1 {
 		t.Fatalf("unexpected plan: %+v", p)
 	}
-	if got := p.Releases["cache"].Universal.Image; got != "redis:7" {
+	if got := p.Releases["cache@app"].Universal.Image; got != "redis:7" {
 		t.Errorf("template not rendered into values, image=%q", got)
 	}
 }

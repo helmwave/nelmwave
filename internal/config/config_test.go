@@ -13,8 +13,7 @@ repositories:
     url: https://charts.bitnami.com/bitnami
     force_update: true
 releases:
-  cache:
-    namespace: app
+  cache@app:
     universal:
       image: redis:7
       service:
@@ -29,9 +28,9 @@ releases:
 	if !ok || !repo.ForceUpdate {
 		t.Errorf("force_update should bind to true via json tag, got %+v", cfg.Repositories)
 	}
-	r, ok := cfg.Releases["cache"]
+	r, ok := cfg.Releases["cache@app"]
 	if !ok {
-		t.Fatalf("release %q missing; got %v", "cache", cfg.Releases)
+		t.Fatalf("release %q missing; got %v", "cache@app", cfg.Releases)
 	}
 	if !r.Options.CreateNamespace {
 		t.Errorf("createNamespace should default to true, got false")
@@ -59,12 +58,10 @@ func mustParseValid(t *testing.T, yml string) *Config {
 func TestValidate_OK(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
-  db:
-    namespace: data
+  db@data:
     chart: { name: bitnami/postgresql }
-  api:
-    namespace: app
-    needs: [db]
+  api@app:
+    needs: [db@data]
     chart: { name: oci://r/api }
 `)
 	if err := Validate(cfg); err != nil {
@@ -78,36 +75,38 @@ func TestValidate_Errors(t *testing.T) {
 		want string
 	}{
 		"no chart source": {
-			yml:  "releases:\n  a: {namespace: n}\n",
+			yml:  "releases:\n  a: {}\n",
 			want: "either chart.name or a universal block",
 		},
 		"both chart and universal": {
 			yml: `
 releases:
   a:
-    namespace: n
     chart: { name: r/a }
     universal: { image: x }
 `,
 			want: "mutually exclusive",
 		},
 		"unknown need": {
-			yml:  "releases:\n  a: {namespace: n, chart: { name: r/a}, needs: [ghost]}\n",
+			yml:  "releases:\n  a: {chart: { name: r/a}, needs: [ghost]}\n",
 			want: `needs unknown release "ghost"`,
 		},
 		"self need": {
-			yml:  "releases:\n  a: {namespace: n, chart: { name: r/a}, needs: [a]}\n",
+			yml:  "releases:\n  a: {chart: { name: r/a}, needs: [a]}\n",
 			want: "needs itself",
 		},
-		"missing namespace": {
-			yml:  "releases:\n  a: {chart: { name: r/a}}\n",
-			want: "namespace is required",
+		"need wrong namespace": {
+			yml: `
+releases:
+  db@data: {chart: {name: r/db}}
+  api@app: {chart: {name: r/api}, needs: [db@other]}
+`,
+			want: `needs unknown release "db@other"`,
 		},
 		"invalid label key": {
 			yml: `
 releases:
   a:
-    namespace: n
     chart: { name: r/a }
     labels: { "bad label": v }
 `,
@@ -131,9 +130,9 @@ releases:
 func TestValidate_DetectsCycle(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
-  a: {namespace: n, chart: { name: r/a}, needs: [b]}
-  b: {namespace: n, chart: { name: r/b}, needs: [c]}
-  c: {namespace: n, chart: { name: r/c}, needs: [a]}
+  a: {chart: { name: r/a}, needs: [b]}
+  b: {chart: { name: r/b}, needs: [c]}
+  c: {chart: { name: r/c}, needs: [a]}
 `)
 	err := Validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "cycle") {

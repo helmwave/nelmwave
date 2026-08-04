@@ -7,40 +7,33 @@ import (
 )
 
 // Validate checks a parsed Config for structural correctness:
-//   - release names (map keys) are non-empty;
 //   - every release selects exactly one chart source (chart.name XOR universal);
-//   - a namespace is set;
 //   - labels are valid Kubernetes labels;
 //   - needs reference existing releases, don't self-reference, and form a DAG
 //     (no cycles).
 //
-// Release names are unique by construction (map keys). All problems are
+// Release keys are non-empty and unique by construction (parsed and normalized
+// in Parse). Namespace/kube-context are optional (taken from the current
+// kube-context when omitted), so they are not checked here. All problems are
 // collected and returned as a single joined error, in deterministic order.
 func Validate(cfg *Config) error {
 	var errs []error
 
-	for _, name := range sortedReleaseNames(cfg.Releases) {
-		r := cfg.Releases[name]
-		if name == "" {
-			errs = append(errs, errors.New("release with empty name"))
-			continue
-		}
-		if r.Namespace == "" {
-			errs = append(errs, fmt.Errorf("release %q: namespace is required", name))
-		}
-		if err := validateChartSource(name, r); err != nil {
+	for _, key := range sortedReleaseNames(cfg.Releases) {
+		r := cfg.Releases[key]
+		if err := validateChartSource(key, r); err != nil {
 			errs = append(errs, err)
 		}
-		if err := validateLabels(name, r.Labels); err != nil {
+		if err := validateLabels(key, r.Labels); err != nil {
 			errs = append(errs, err)
 		}
 		for _, need := range r.Needs {
-			if need == name {
-				errs = append(errs, fmt.Errorf("release %q: needs itself", name))
+			if need == key {
+				errs = append(errs, fmt.Errorf("release %q: needs itself", key))
 				continue
 			}
 			if _, ok := cfg.Releases[need]; !ok {
-				errs = append(errs, fmt.Errorf("release %q: needs unknown release %q", name, need))
+				errs = append(errs, fmt.Errorf("release %q: needs unknown release %q", key, need))
 			}
 		}
 	}

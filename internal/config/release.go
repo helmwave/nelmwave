@@ -1,13 +1,13 @@
 package config
 
-// Release is a single deployable unit: one nelm release. It is keyed by name in
-// Config.Releases, so it carries no name field of its own.
+// Release is a single deployable unit: one nelm release. Its identity — name,
+// namespace and kube-context — lives entirely in the Config.Releases map key
+// (see Uniqname), so the struct carries none of those fields.
 type Release struct {
-	// Namespace is the target Kubernetes namespace.
-	Namespace string `json:"namespace" yaml:"namespace"`
 	// Labels are used for k8s-style selection (-l) and are free-form.
 	Labels map[string]string `json:"labels" yaml:"labels"`
-	// Needs lists release names that must be applied before this one (DAG edges).
+	// Needs lists releases that must be applied before this one (DAG edges).
+	// Each entry is a release key ("name[@namespace[@kubecontext]]").
 	Needs []string `json:"needs" yaml:"needs"`
 
 	// Chart points at a helm-repo or OCI chart. Mutually exclusive with Universal.

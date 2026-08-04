@@ -15,19 +15,18 @@ func TestFromConfig_AndRoundTrip(t *testing.T) {
 			"bitnami": {URL: "https://charts.example.com", ForceUpdate: true},
 		},
 		Releases: map[string]config.Release{
-			"api": {
-				Namespace: "app",
-				Labels:    map[string]string{"app": "api"},
-				Needs:     []string{"db"},
-				Chart:     config.Chart{Name: "oci://r/api", Version: "1.0.0"},
-				Values:    []config.FileRef{{Src: "file://v.yml"}},
-				Options:   config.ReleaseOptions{CreateNamespace: true},
+			"api@app": {
+				Labels:  map[string]string{"app": "api"},
+				Needs:   []string{"db@data"},
+				Chart:   config.Chart{Name: "oci://r/api", Version: "1.0.0"},
+				Values:  []config.FileRef{{Src: "file://v.yml"}},
+				Options: config.ReleaseOptions{CreateNamespace: true},
 			},
 		},
 	}
 
 	p := FromConfig(cfg)
-	if _, ok := p.Releases["api"]; !ok || len(p.Releases) != 1 {
+	if _, ok := p.Releases["api@app"]; !ok || len(p.Releases) != 1 {
 		t.Fatalf("FromConfig produced %+v", p.Releases)
 	}
 
