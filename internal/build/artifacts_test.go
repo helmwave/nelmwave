@@ -24,7 +24,7 @@ func TestArtifacts_WritesOrderedValuesAndStore(t *testing.T) {
 			"db@data": {
 				Chart:  config.Chart{Name: "r/db"},
 				Values: []config.FileRef{{Src: "common.yml"}, {Src: "pg.yml.tpl"}},
-				Store:  []config.FileRef{{Src: "netpol.yml", Dst: "manifests/netpol.yml"}},
+				Store:  []config.FileRef{{Src: "netpol.yml", Alias: "custom-netpol.yml"}},
 			},
 		},
 	}
@@ -51,8 +51,8 @@ func TestArtifacts_WritesOrderedValuesAndStore(t *testing.T) {
 		t.Errorf("rendered values = %q", data)
 	}
 
-	// Store file written at its dst.
-	if _, err := os.Stat(filepath.Join(out, "store", "db@data", "manifests", "netpol.yml")); err != nil {
+	// Store file written under its alias.
+	if _, err := os.Stat(filepath.Join(out, "store", "db@data", "custom-netpol.yml")); err != nil {
 		t.Errorf("store file missing: %v", err)
 	}
 }
@@ -98,5 +98,32 @@ func mustWrite(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestArtifacts_StoreWithoutAliasUsesIndexedBasename(t *testing.T) {
+	base := t.TempDir()
+	mustWrite(t, base, "a.yml", "x: 1\n")
+	mustWrite(t, base, "b.yml", "y: 2\n")
+	cfg := &config.Config{
+		Releases: map[string]config.Release{
+			"r@n": {
+				Chart: config.Chart{Name: "c/r"},
+				Store: []config.FileRef{{Src: "a.yml"}, {Src: "b.yml", Alias: "named.yml"}},
+			},
+		},
+	}
+	p := plan.FromConfig(cfg)
+	out := filepath.Join(t.TempDir(), "out")
+	if err := Artifacts(context.Background(), cfg, p, base, out, zap.NewNop()); err != nil {
+		t.Fatalf("Artifacts: %v", err)
+	}
+	// no alias -> index-prefixed basename
+	if _, err := os.Stat(filepath.Join(out, "store", "r@n", "00-a.yml")); err != nil {
+		t.Errorf("aliasless store file should be 00-a.yml: %v", err)
+	}
+	// alias -> exact name
+	if _, err := os.Stat(filepath.Join(out, "store", "r@n", "named.yml")); err != nil {
+		t.Errorf("aliased store file should be named.yml: %v", err)
 	}
 }

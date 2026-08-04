@@ -261,8 +261,9 @@ releases:
   `Values []FileRef`, `Store []FileRef`, `Options ReleaseOptions`
   (проброс nelm-опций: timeout, autoRollback≈atomic, createNamespace, …).
   *(блок `universal:`/`UniversalValues` отложен — §12.)*
-- **`FileRef`** (единый для values и store): `Src`, `Dst` (только store), `Optional`, `Strict`.
-  Принимает 4 формы (строка/мапа × со схемой/без).
+- **`FileRef`** (единый для values и store): `Src`, `Alias` (имя артефакта под `.nelmwave/`;
+  пусто → `<NN>-<basename>`), `Optional`, `Strict`. Принимает 4 формы (строка/мапа × со схемой/без).
+  Внутренней раскладкой `.nelmwave/` управляет nelmwave, пользователь задаёт только `src`+`alias`.
 - **`Sets map[string]any`** — inline-оверрайды (YAML-мапа: ключ — dotted-путь как helm `--set`,
   значение сохраняет YAML-тип), поверх values (высший приоритет); конвертируются в nelm
   `ValuesSetJSON` (`key=json`, типобезопасно), ключи сортируются.
@@ -357,8 +358,8 @@ releases:
 
 ## 10. StoreFiles (тот же резолвер)
 
-- `Release.Store []FileRef{ Src, Dst, ... }` — произвольные файлы, резолвятся тем же резолвером
-  (правила copy/render; sops отложен) и складываются в `.nelmwave/store/<uniqname>/<Dst>`.
+- `Release.Store []FileRef{ Src, Alias, ... }` — произвольные файлы, резолвятся тем же резолвером
+  (правила copy/render; sops отложен) и складываются в `.nelmwave/store/<uniqname>/<alias|NN-basename>`.
 - Назначение: доп. манифесты и сопутствующие артефакты релиза (напр. NetworkPolicy, CRD, конфиги),
   которые нужно приложить/сохранить рядом с планом. Реши политику применения:
   - как дополнительные манифесты, подаваемые nelm вместе с релизом, **или**

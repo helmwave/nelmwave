@@ -62,8 +62,11 @@ func resolveValues(ctx context.Context, res *datasource.Resolver, rc config.Rele
 			}
 			return fmt.Errorf("release %q: resolve values %q: %w", key, ref.Src, err)
 		}
-		name := valuesFileName(len(files), ref.Src)
-		if err := writeFile(filepath.Join(relDir, name), data); err != nil {
+		name, err := artifactName(len(files), ref.Src, ref.Alias)
+		if err != nil {
+			return fmt.Errorf("release %q: values: %w", key, err)
+		}
+		if err := writeFile(filepath.Join(relDir, filepath.FromSlash(name)), data); err != nil {
 			return err
 		}
 		files = append(files, filepath.ToSlash(filepath.Join(plan.ValuesDir, sanitize(key), name)))
@@ -79,10 +82,23 @@ func resolveValues(ctx context.Context, res *datasource.Resolver, rc config.Rele
 	return nil
 }
 
-// valuesFileName builds an ordered, collision-free file name for a resolved
-// values source: a zero-padded index prefix keeps the nelm merge order, plus a
-// sanitized label derived from the source for readability.
-func valuesFileName(index int, src string) string {
+// artifactName returns the file name for a resolved values/store artifact: the
+// caller-provided alias (a relative path under the release's artifact dir) when
+// set, otherwise an index-prefixed sanitized basename for deterministic,
+// collision-free ordering.
+func artifactName(index int, src, alias string) (string, error) {
+	if alias != "" {
+		if !safeRelPath(alias) {
+			return "", fmt.Errorf("alias %q escapes the artifact directory", alias)
+		}
+		return alias, nil
+	}
+	return indexedBasename(index, src), nil
+}
+
+// indexedBasename builds an ordered, collision-free file name from a source: a
+// zero-padded index prefix plus a sanitized basename derived from the source.
+func indexedBasename(index int, src string) string {
 	label := src
 	if i := strings.IndexAny(label, "?#"); i >= 0 {
 		label = label[:i]
@@ -113,6 +129,7 @@ func pathBase(s string) string {
 }
 
 func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Release, key, storeDir string, log *zap.Logger) error {
+	written := 0
 	for _, s := range rc.Store {
 		data, err := res.Resolve(ctx, s.Src)
 		if err != nil {
@@ -122,18 +139,16 @@ func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Relea
 			}
 			return fmt.Errorf("release %q: resolve store %q: %w", key, s.Src, err)
 		}
-		dst := s.Dst
-		if dst == "" {
-			dst = filepath.Base(s.Src)
+		name, err := artifactName(written, s.Src, s.Alias)
+		if err != nil {
+			return fmt.Errorf("release %q: store: %w", key, err)
 		}
-		if !safeRelPath(dst) {
-			return fmt.Errorf("release %q: store dst %q escapes the store directory", key, dst)
-		}
-		path := filepath.Join(storeDir, sanitize(key), filepath.FromSlash(dst))
+		path := filepath.Join(storeDir, sanitize(key), filepath.FromSlash(name))
 		if err := writeFile(path, data); err != nil {
 			return err
 		}
-		log.Debug("store written", zap.String("src", s.Src), zap.String("dst", dst))
+		written++
+		log.Debug("store written", zap.String("src", s.Src), zap.String("name", name))
 	}
 	return nil
 }
