@@ -57,7 +57,7 @@ releases:
       image.tag: [[ getenv "API_TAG" "1.4.2" ]]
     # store files are saved under .nelmwave/store/<uniqname>/; `name` names the
     # file (default: index-prefixed basename). The internal layout is nelmwave's.
-    store:
+    stores:
       - { src: extra/netpol.yml, name: netpol.yml }
 
   cache@app:

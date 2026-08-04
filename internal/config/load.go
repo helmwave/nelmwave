@@ -160,8 +160,8 @@ func normalizeReleaseRefs(rel map[string]any) {
 	if _, has := rel["values"]; has {
 		rel["values"] = normalizeRefList(rel["values"])
 	}
-	if _, has := rel["store"]; has {
-		rel["store"] = normalizeRefList(rel["store"])
+	if _, has := rel["stores"]; has {
+		rel["stores"] = normalizeRefList(rel["stores"])
 	}
 }
 
@@ -186,8 +186,8 @@ func (c *Config) canonicalizeSources() {
 		for i := range r.Values {
 			r.Values[i].Src = canonicalizeSrc(r.Values[i].Src)
 		}
-		for i := range r.Store {
-			r.Store[i].Src = canonicalizeSrc(r.Store[i].Src)
+		for i := range r.Stores {
+			r.Stores[i].Src = canonicalizeSrc(r.Stores[i].Src)
 		}
 		c.Releases[name] = r
 	}

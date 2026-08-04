@@ -233,9 +233,8 @@ releases:
       version: 1.4.2
     values:
       - src: values/api.yml.tpl
-    store:
-      - src: extra/netpol.yml          # StoreFiles → .nelmwave/
-        dst: manifests/netpol.yml
+    stores:
+      - { src: extra/netpol.yml, name: netpol.yml }   # → .nelmwave/store/<uniqname>/
 
   cache@app:
     labels: { app: redis, tier: cache, env: prod }
@@ -259,7 +258,7 @@ releases:
 - Идентичность релиза — тип **`Uniqname{Name, Namespace, KubeContext}`** (парсинг/канонизация
   ключа и `needs.releases`). Поля-идентификатора в value-структурах НЕТ.
 - `Release`: `Labels map[string]string`, `Needs Needs`, `Chart{Name, Version}` (обязателен),
-  `Values []FileRef`, `Store []FileRef`, `Options ReleaseOptions`
+  `Values []FileRef`, `Stores []FileRef`, `Options ReleaseOptions`
   (проброс nelm-опций: timeout, autoRollback≈atomic, createNamespace, …).
   *(блок `universal:`/`UniversalValues` отложен — §12.)*
 - **`FileRef`** (единый для values и store): `Src`, `Name` (имя артефакта под `.nelmwave/`;
@@ -357,9 +356,9 @@ releases:
 
 ---
 
-## 10. StoreFiles (тот же резолвер)
+## 10. Stores (store files) (тот же резолвер)
 
-- `Release.Store []FileRef{ Src, Name, ... }` — произвольные файлы, резолвятся тем же резолвером
+- `Release.Stores []FileRef{ Src, Name, ... }` — произвольные файлы, резолвятся тем же резолвером
   (правила copy/render; sops отложен) и складываются в `.nelmwave/store/<uniqname>/<name|NN-basename>`.
 - Назначение: доп. манифесты и сопутствующие артефакты релиза (напр. NetworkPolicy, CRD, конфиги),
   которые нужно приложить/сохранить рядом с планом. Реши политику применения:

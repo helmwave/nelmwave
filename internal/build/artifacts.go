@@ -130,7 +130,7 @@ func pathBase(s string) string {
 
 func resolveStore(ctx context.Context, res *datasource.Resolver, rc config.Release, key, storeDir string, log *zap.Logger) error {
 	written := 0
-	for _, s := range rc.Store {
+	for _, s := range rc.Stores {
 		data, err := res.Resolve(ctx, s.Src)
 		if err != nil {
 			if s.Optional && isMissing(err) {

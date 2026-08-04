@@ -51,7 +51,7 @@ type Release struct {
 	Chart   config.Chart          `yaml:"chart,omitempty"`
 	Values  []config.FileRef      `yaml:"values,omitempty"`
 	Sets    map[string]any        `yaml:"sets,omitempty"`
-	Store   []config.FileRef      `yaml:"store,omitempty"`
+	Stores  []config.FileRef      `yaml:"stores,omitempty"`
 	Options config.ReleaseOptions `yaml:"options"`
 
 	// ValuesFiles are the plan-relative paths to the resolved values files, in
@@ -74,7 +74,7 @@ func FromConfig(cfg *config.Config) *Plan {
 			Chart:   r.Chart,
 			Values:  r.Values,
 			Sets:    r.Sets,
-			Store:   r.Store,
+			Stores:  r.Stores,
 			Options: r.Options,
 		}
 	}

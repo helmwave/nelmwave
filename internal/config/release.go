@@ -21,8 +21,8 @@ type Release struct {
 	// values keep their YAML type (int/string/bool/...). Passed to nelm as
 	// type-preserving JSON overrides.
 	Sets map[string]any `json:"sets" yaml:"sets,omitempty"`
-	// Store are companion files resolved and stored alongside the plan.
-	Store []FileRef `json:"store" yaml:"store"`
+	// Stores are companion files resolved and stored alongside the plan.
+	Stores []FileRef `json:"stores" yaml:"stores"`
 
 	// nelm option passthrough.
 	Options ReleaseOptions `json:"options" yaml:"options"`

@@ -286,12 +286,12 @@ releases:
   a:
     namespace: n
     chart: { name: r/a }
-    store:
+    stores:
       - file://extra/netpol.yml
 `)
-	store := cfg.Releases["a"].Store
-	if len(store) != 1 || store[0].Src != "extra/netpol.yml" {
-		t.Fatalf("bare store form not normalized: %+v", store)
+	stores := cfg.Releases["a"].Stores
+	if len(stores) != 1 || stores[0].Src != "extra/netpol.yml" {
+		t.Fatalf("bare store form not normalized: %+v", stores)
 	}
 }
 
