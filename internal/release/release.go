@@ -23,6 +23,8 @@ type Spec struct {
 	ChartVersion string
 	// ValuesFiles are absolute paths to values files, in merge order.
 	ValuesFiles []string
+	// Sets are inline "key=value" overrides applied on top of ValuesFiles.
+	Sets []string
 
 	// Chart-repository connection (helm repos). RepoURL empty means the chart is
 	// OCI or local and needs no repo lookup.

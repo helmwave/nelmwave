@@ -259,6 +259,8 @@ releases:
   *(блок `universal:`/`UniversalValues` отложен — §12.)*
 - **`FileRef`** (единый для values и store): `Src`, `Dst` (только store), `Optional`, `Strict`.
   Принимает 4 формы (строка/мапа × со схемой/без).
+- **`Sets []string`** — inline-оверрайды `key=value` (стиль helm `--set`), поверх values
+  (высший приоритет); отдаются в nelm `ValuesSet`.
 - **`Needs`**: `Releases map[string]NeedRelease` (`{Strict, …}`) + инлайн селектор
   `MatchLabels map[string]string` + `MatchLabelsExpressions []LabelSelectorRequirement`
   (семантика k8s; пустой = ничего).

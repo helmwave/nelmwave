@@ -16,6 +16,9 @@ type Release struct {
 
 	// Values are per-release value sources, merged on top of global Values.
 	Values []FileRef `json:"values" yaml:"values"`
+	// Sets are inline chart value overrides in "key=value" form (like helm
+	// --set), applied on top of Values (highest precedence).
+	Sets []string `json:"sets" yaml:"sets,omitempty"`
 	// Store are companion files resolved and stored alongside the plan.
 	Store []FileRef `json:"store" yaml:"store"`
 

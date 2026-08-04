@@ -19,6 +19,7 @@ type fakeApplier struct {
 	installed   []string
 	uninstalled []string
 	planned     []string
+	sets        map[string][]string
 	fail        map[string]error
 	changes     map[string]bool // release name -> has planned changes
 }
@@ -27,6 +28,10 @@ func (f *fakeApplier) Install(_ context.Context, s release.Spec) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.installed = append(f.installed, s.Name)
+	if f.sets == nil {
+		f.sets = map[string][]string{}
+	}
+	f.sets[s.Name] = s.Sets
 	return f.fail[s.Name]
 }
 
@@ -165,5 +170,25 @@ func TestDiff_DetailedExitCodeNoChanges(t *testing.T) {
 	f := &fakeApplier{} // no changes
 	if err := diffReleases(context.Background(), zap.NewNop(), testPlan(false), opts("", false), true, f); err != nil {
 		t.Fatalf("no changes should exit cleanly, got %v", err)
+	}
+}
+
+func TestDeploy_PassesSetsToApplier(t *testing.T) {
+	p := &plan.Plan{
+		Releases: map[string]plan.Release{
+			"a@ns": {
+				Labels: map[string]string{"app": "a"},
+				Chart:  config.Chart{Name: "r/a"},
+				Sets:   []string{"image.tag=1.2.3", "replicaCount=3"},
+			},
+		},
+	}
+	f := &fakeApplier{}
+	if err := deploy(context.Background(), zap.NewNop(), p, opts("", false), f, opInstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	got := f.sets["a"]
+	if len(got) != 2 || got[0] != "image.tag=1.2.3" || got[1] != "replicaCount=3" {
+		t.Errorf("sets passed to applier = %v", got)
 	}
 }

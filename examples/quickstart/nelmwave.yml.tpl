@@ -45,6 +45,10 @@ releases:
       version: 1.4.2
     values:
       - src: values/api.yml.tpl
+    # inline overrides (helm --set style), applied on top of values
+    sets:
+      - image.tag=[[ getenv "API_TAG" "1.4.2" ]]
+      - replicaCount=3
     store:
       - src: extra/netpol.yml
         dst: manifests/netpol.yml
