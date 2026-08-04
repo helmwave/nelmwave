@@ -8,7 +8,8 @@
 
 > **Уточнения, принятые в ходе разработки** (владелец, 2026-08-04). Имеют приоритет над
 > исходными формулировками ниже, где расходятся:
-> - **Коллекции — мапы, не списки.** `registries` (ключ = host), `repositories` (ключ = name),
+> - **Коллекции — мапы, не списки.** `repositories` (ключ = alias/host; helm-repo `https://` и OCI
+>   `oci://` вместе, отличаются по схеме URL; значение — голая строка-URL или объект),
 >   `releases` (ключ = **uniqname** `name[@namespace[@kubecontext]]`). ns/ctx опциональны — если
 >   опущены, берётся текущий kube-context/его дефолтный namespace (резолв на apply-этапе).
 >   Value-структуры не содержат поля-идентификатора. kube-context может содержать `@`.
@@ -155,8 +156,7 @@ github.com/helmwave/nelmwave
 │   │   ├── uniqname.go     # Uniqname name[@ns[@ctx]]: parse/канонизация ключей
 │   │   ├── needs.go        # Needs{Releases, MatchLabels, MatchLabelsExpressions}, DirectNeeds
 │   │   ├── fileref.go      # FileRef (единый для values и store)
-│   │   ├── repository.go   # Repository (helm repo)
-│   │   ├── registry.go     # Registry (OCI)
+│   │   ├── repository.go   # Repository (helm-repo + OCI, объединены; IsOCI)
 │   │   ├── load.go         # Parse: gomplate-нормализация + confijer + канонизация
 │   │   ├── validate.go     # валидация + детект циклов (вкл. label-рёбра)
 │   │   └── selector.go     # k8s label selector parsing/matching
@@ -184,23 +184,22 @@ github.com/helmwave/nelmwave
 
 ### 5.1 Пример целевой схемы (ориентир, финализируй в коде)
 
-Коллекции — **мапы по идентификатору**: `registries` (ключ = host), `repositories` (ключ = name),
+Коллекции — **мапы по идентификатору**: `repositories` (ключ = alias/host; helm-repo и OCI вместе),
 `releases` (ключ = **uniqname** `name[@namespace[@kubecontext]]`). ns/ctx в ключе опциональны.
 
 ```yaml
 # nelmwave.yml.tpl  — рендерится gomplate (делимитеры [[ ]])
 project: my-platform
 
-registries:
-  registry.example.com:                 # ключ = host
+# repositories: helm-repo (https://) и OCI (oci://) вместе. Значение — голая
+# строка-URL или объект (когда нужны креды/флаги).
+repositories:
+  bitnami: https://charts.bitnami.com/bitnami   # голый URL (короткая форма)
+  registry.example.com:                          # полная форма: OCI + креды
+    url: oci://registry.example.com
     username: [[ .Env.REGISTRY_USER ]]
     password: [[ .Env.REGISTRY_PASS ]]
-
-repositories:
-  bitnami:                              # ключ = name
-    url: https://charts.bitnami.com/bitnami
     # переопределение helm repo config / смежных настроек — см. §13
-    force_update: true
 
 releases:
   postgres@data:                        # ключ = uniqname name@namespace[@kubecontext]
@@ -245,9 +244,9 @@ releases:
 ```
 
 ### 5.2 Структуры (confijer-friendly) — реализовано
-- Корень `Config`: `Project string`, `Registries map[string]Registry` (ключ=host),
-  `Repositories map[string]Repository` (ключ=name), `Releases map[string]Release`
-  (ключ=uniqname), глобальные `Values []FileRef`.
+- Корень `Config`: `Project string`, `Repositories map[string]Repository`
+  (ключ=alias/host; helm-repo + OCI, `IsOCI()` по схеме; значение — голый URL или объект),
+  `Releases map[string]Release` (ключ=uniqname), глобальные `Values []FileRef`.
 - Идентичность релиза — тип **`Uniqname{Name, Namespace, KubeContext}`** (парсинг/канонизация
   ключа и `needs.releases`). Поля-идентификатора в value-структурах НЕТ.
 - `Release`: `Labels map[string]string`, `Needs Needs`, `Chart{Name, Version}` (обязателен),
@@ -400,12 +399,17 @@ releases:
 
 ---
 
-## 13. Repositories / OCI Registries [FIXED]
+## 13. Repositories (helm-repo + OCI, объединены) [FIXED]
 
-- **OCI registry**: `registries: [{host, username, password}]`. Логин/креды прокинуть в nelm
-  (через его registry-client опции). Поддержи анонимный доступ.
-- **Helm repositories**: `repositories: [{name, url, username, password, ...}]`. Добавление/обновление
-  repo, резолв `repo/chart`.
+> **Изменено:** `registries` и `repositories` **слиты в одну мапу `repositories`** (ключ =
+> alias/host). helm-repo (`https://`) и OCI (`oci://`) различаются по схеме URL (`Repository.IsOCI()`).
+> Значение — голая строка-URL (короткая форма) или объект `{url, username, password, force_update,
+> insecure_skip_tls_verify, pass_credentials, ca_file}`.
+
+- **OCI registry** (`url: oci://host`): логин/креды прокинуть в nelm (registry-client опции);
+  поддержи анонимный доступ.
+- **Helm repository** (`url: https://…`): добавление/обновление repo, резолв `alias/chart`
+  (chart.name = `<repo-alias>/<chart>`).
 - **Переопределение helm repo config и смежных настроек** [FIXED]: дай возможность указать/переопределить
   путь к `repositories.yaml` / cache / registry config (аналог `--repository-config`,
   `--repository-cache`, `--registry-config`), а также per-repo флаги (`force_update`,

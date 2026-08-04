@@ -10,13 +10,13 @@ import (
 
 // Parse unmarshals already-rendered nelmwave.yml bytes into a Config.
 //
-// It runs two normalizations that confijer cannot do itself:
+// It runs normalizations that confijer cannot do itself (confijer silently
+// drops a scalar where it expects a struct):
 //
-//  1. values/store entries written as a bare scalar ("src") are rewritten to
-//     the mapping form ({src: "..."}) before confijer decodes them, because
-//     confijer silently drops scalar elements where a struct is expected.
-//  2. every resolved Src is canonicalized so equivalent spellings collapse to
-//     one form (see canonicalizeSrc).
+//  1. values/store entries written as a bare scalar are rewritten to {src: ...};
+//  2. repository entries written as a bare URL string are rewritten to {url: ...};
+//  3. every resolved Src is canonicalized so equivalent spellings collapse
+//     (see canonicalizeSrc).
 //
 // It does not validate; call Validate after.
 func Parse(data []byte) (*Config, error) {
@@ -25,6 +25,7 @@ func Parse(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("parse nelmwave config: %w", err)
 	}
 	normalizeRefLists(raw)
+	normalizeRepositories(raw)
 
 	normalized, err := yaml.Marshal(raw)
 	if err != nil {
@@ -75,6 +76,20 @@ func (c *Config) canonicalizeUniqnames() error {
 	}
 	c.Releases = canon
 	return nil
+}
+
+// normalizeRepositories rewrites bare-URL-string repository entries into
+// {url: <string>} maps so confijer decodes them into Repository.
+func normalizeRepositories(root map[string]any) {
+	repos, ok := root["repositories"].(map[string]any)
+	if !ok {
+		return
+	}
+	for name, rv := range repos {
+		if s, ok := rv.(string); ok {
+			repos[name] = map[string]any{"url": s}
+		}
+	}
 }
 
 // normalizeRefLists rewrites bare-string entries in the top-level values list

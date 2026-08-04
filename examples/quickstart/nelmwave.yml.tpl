@@ -1,18 +1,18 @@
 # Quickstart nelmwave manifest, rendered by gomplate (double-square-bracket delimiters).
 project: my-platform
 
-# Maps keyed by identity: registries by host, repositories by name, releases by
-# uniqname "name[@namespace[@kubecontext]]" (namespace/context optional — the
-# current kube-context is used when omitted).
-registries:
-  registry.example.com:
+# Maps keyed by identity: repositories by alias/host, releases by uniqname
+# "name[@namespace[@kubecontext]]" (namespace/context optional — the current
+# kube-context is used when omitted).
+#
+# repositories cover both helm repos (https://) and OCI registries (oci://).
+# A value may be a bare URL string, or a full object when auth/flags are needed.
+repositories:
+  bitnami: https://charts.bitnami.com/bitnami   # bare URL (short form)
+  registry.example.com:                          # full form: OCI with creds
+    url: oci://registry.example.com
     username: [[ getenv "REGISTRY_USER" "anonymous" ]]
     password: [[ getenv "REGISTRY_PASS" "" ]]
-
-repositories:
-  bitnami:
-    url: https://charts.bitnami.com/bitnami
-    force_update: true
 
 releases:
   postgres@data:

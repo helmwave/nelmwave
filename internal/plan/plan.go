@@ -27,11 +27,10 @@ const (
 )
 
 // Plan is the flat, fully-resolved deployment plan persisted to disk.
-// Registries, Repositories and Releases are keyed by identity, mirroring the
-// manifest. yaml.v3 marshals map keys in sorted order, so output is deterministic.
+// Repositories and Releases are keyed by identity, mirroring the manifest.
+// yaml.v3 marshals map keys in sorted order, so output is deterministic.
 type Plan struct {
 	Project      string                       `yaml:"project"`
-	Registries   map[string]config.Registry   `yaml:"registries,omitempty"`
 	Repositories map[string]config.Repository `yaml:"repositories,omitempty"`
 	Releases     map[string]Release           `yaml:"releases"`
 }
@@ -56,7 +55,6 @@ type Release struct {
 func FromConfig(cfg *config.Config) *Plan {
 	p := &Plan{
 		Project:      cfg.Project,
-		Registries:   cfg.Registries,
 		Repositories: cfg.Repositories,
 		Releases:     make(map[string]Release, len(cfg.Releases)),
 	}

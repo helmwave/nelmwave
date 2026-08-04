@@ -39,6 +39,49 @@ releases:
 	}
 }
 
+func TestParse_RepositoryForms(t *testing.T) {
+	cfg := mustParseValid(t, `
+repositories:
+  bitnami: https://charts.bitnami.com/bitnami
+  ghcr.io: oci://ghcr.io
+  private:
+    url: oci://registry.example.com
+    username: u
+    password: p
+releases:
+  a: { chart: { name: bitnami/x } }
+`)
+	if got := cfg.Repositories["bitnami"].URL; got != "https://charts.bitnami.com/bitnami" {
+		t.Errorf("bare-string repo url = %q", got)
+	}
+	if cfg.Repositories["bitnami"].IsOCI() {
+		t.Errorf("https repo should not be OCI")
+	}
+	if !cfg.Repositories["ghcr.io"].IsOCI() {
+		t.Errorf("oci:// repo should be OCI")
+	}
+	priv := cfg.Repositories["private"]
+	if priv.URL != "oci://registry.example.com" || priv.Username != "u" || priv.Password != "p" {
+		t.Errorf("full-form repo not parsed: %+v", priv)
+	}
+	if err := Validate(cfg); err != nil {
+		t.Errorf("expected valid, got %v", err)
+	}
+}
+
+func TestValidate_RepositoryURLRequired(t *testing.T) {
+	cfg := mustParseValid(t, `
+repositories:
+  broken:
+    username: u
+releases:
+  a: { chart: { name: r/a } }
+`)
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "url is required") {
+		t.Fatalf("expected url-required error, got: %v", err)
+	}
+}
+
 func mustParseValid(t *testing.T, yml string) *Config {
 	t.Helper()
 	cfg, err := Parse([]byte(yml))

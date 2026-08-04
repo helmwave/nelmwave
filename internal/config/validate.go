@@ -19,6 +19,12 @@ import (
 func Validate(cfg *Config) error {
 	var errs []error
 
+	for _, name := range sortedStringKeys(cfg.Repositories) {
+		if cfg.Repositories[name].URL == "" {
+			errs = append(errs, fmt.Errorf("repository %q: url is required", name))
+		}
+	}
+
 	for _, key := range sortedReleaseNames(cfg.Releases) {
 		r := cfg.Releases[key]
 		if err := validateChartSource(key, r); err != nil {
@@ -59,6 +65,11 @@ func validateNeeds(cfg *Config, key string, r Release) []error {
 }
 
 func sortedNeedKeys(m map[string]NeedRelease) []string {
+	return sortedStringKeys(m)
+}
+
+// sortedStringKeys returns the keys of any string-keyed map in sorted order.
+func sortedStringKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
