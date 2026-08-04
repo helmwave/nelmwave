@@ -61,11 +61,16 @@ releases:
   db@data:
     chart: { name: bitnami/postgresql }
   api@app:
-    needs: [db@data]
+    needs:
+      releases:
+        db@data: { strict: true }
     chart: { name: oci://r/api }
 `)
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("expected valid, got: %v", err)
+	}
+	if !cfg.Releases["api@app"].Needs.Releases["db@data"].Strict {
+		t.Errorf("strict flag not parsed on needs.releases")
 	}
 }
 
@@ -88,20 +93,32 @@ releases:
 			want: "mutually exclusive",
 		},
 		"unknown need": {
-			yml:  "releases:\n  a: {chart: { name: r/a}, needs: [ghost]}\n",
+			yml:  "releases:\n  a: {chart: { name: r/a}, needs: {releases: {ghost: {}}}}\n",
 			want: `needs unknown release "ghost"`,
 		},
 		"self need": {
-			yml:  "releases:\n  a: {chart: { name: r/a}, needs: [a]}\n",
+			yml:  "releases:\n  a: {chart: { name: r/a}, needs: {releases: {a: {}}}}\n",
 			want: "needs itself",
 		},
 		"need wrong namespace": {
 			yml: `
 releases:
   db@data: {chart: {name: r/db}}
-  api@app: {chart: {name: r/api}, needs: [db@other]}
+  api@app: {chart: {name: r/api}, needs: {releases: {db@other: {}}}}
 `,
 			want: `needs unknown release "db@other"`,
+		},
+		"invalid needs.labels operator": {
+			yml: `
+releases:
+  a:
+    chart: {name: r/a}
+    needs:
+      labels:
+        matchExpressions:
+          - { key: env, operator: Bogus, values: [x] }
+`,
+			want: "needs.labels",
 		},
 		"invalid label key": {
 			yml: `
@@ -130,13 +147,54 @@ releases:
 func TestValidate_DetectsCycle(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
-  a: {chart: { name: r/a}, needs: [b]}
-  b: {chart: { name: r/b}, needs: [c]}
-  c: {chart: { name: r/c}, needs: [a]}
+  a: {chart: { name: r/a}, needs: {releases: {b: {}}}}
+  b: {chart: { name: r/b}, needs: {releases: {c: {}}}}
+  c: {chart: { name: r/c}, needs: {releases: {a: {}}}}
 `)
 	err := Validate(cfg)
 	if err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("expected cycle error, got: %v", err)
+	}
+}
+
+func TestNeeds_LabelsResolveAndCycle(t *testing.T) {
+	cfg := mustParseValid(t, `
+releases:
+  db@data:
+    labels: { tier: db }
+    chart: { name: r/db }
+  api@app:
+    labels: { tier: backend }
+    needs:
+      labels:
+        matchLabels: { tier: db }
+    chart: { name: r/api }
+`)
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected valid, got: %v", err)
+	}
+	got, err := cfg.DirectNeeds("api@app", cfg.Releases["api@app"])
+	if err != nil {
+		t.Fatalf("DirectNeeds: %v", err)
+	}
+	if len(got) != 1 || got[0] != "db@data" {
+		t.Errorf("label need should resolve to [db@data], got %v", got)
+	}
+
+	// Two releases selecting each other by label form a cycle.
+	loop := mustParseValid(t, `
+releases:
+  a@n:
+    labels: { k: a }
+    needs: { labels: { matchLabels: { k: b } } }
+    chart: { name: r/a }
+  b@n:
+    labels: { k: b }
+    needs: { labels: { matchLabels: { k: a } } }
+    chart: { name: r/b }
+`)
+	if err := Validate(loop); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("expected label cycle error, got: %v", err)
 	}
 }
 

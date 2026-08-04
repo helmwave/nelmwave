@@ -41,7 +41,7 @@ type Plan struct {
 // but adds resolved artifact paths filled by later build stages.
 type Release struct {
 	Labels    map[string]string       `yaml:"labels,omitempty"`
-	Needs     []string                `yaml:"needs,omitempty"`
+	Needs     config.Needs            `yaml:"needs,omitempty"`
 	Chart     config.Chart            `yaml:"chart,omitempty"`
 	Universal *config.UniversalValues `yaml:"universal,omitempty"`
 	Values    []config.FileRef        `yaml:"values,omitempty"`

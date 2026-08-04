@@ -52,13 +52,15 @@ releases:
     chart: { name: r/pg }
   api@:
     chart: { name: r/api }
-    needs: [postgres@data@]
+    needs:
+      releases:
+        postgres@data@: {}
 `)
 	if _, ok := cfg.Releases["api"]; !ok {
 		t.Fatalf(`key "api@" should normalize to "api"; got keys %v`, keys(cfg.Releases))
 	}
-	if need := cfg.Releases["api"].Needs[0]; need != "postgres@data" {
-		t.Errorf("need not canonicalized, got %q", need)
+	if _, ok := cfg.Releases["api"].Needs.Releases["postgres@data"]; !ok {
+		t.Errorf("need key not canonicalized, got %v", cfg.Releases["api"].Needs.Releases)
 	}
 	if err := Validate(cfg); err != nil {
 		t.Errorf("expected valid after canonicalization, got: %v", err)

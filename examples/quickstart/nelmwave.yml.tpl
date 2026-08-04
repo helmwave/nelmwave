@@ -33,7 +33,9 @@ releases:
       tier: backend
       env: [[ getenv "ENV" "prod" ]]
     needs:
-      - postgres@data
+      releases:
+        postgres@data:
+          strict: true          # fail if this dependency is filtered out
     chart:
       name: oci://registry.example.com/charts/api
       version: 1.4.2
@@ -45,6 +47,13 @@ releases:
 
   cache@app:
     labels: { app: redis, tier: cache, env: prod }
+    needs:
+      # Kubernetes label selector: wait for every release it matches.
+      labels:
+        matchLabels:
+          tier: db
+        # matchExpressions:
+        #   - { key: env, operator: In, values: [prod, stg] }
     universal:
       image: redis:7
       service:

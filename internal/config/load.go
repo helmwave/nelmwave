@@ -60,12 +60,16 @@ func (c *Config) canonicalizeUniqnames() error {
 		if _, dup := canon[ck]; dup {
 			return fmt.Errorf("release %q collides with another release after normalization to %q", key, ck)
 		}
-		for i, need := range r.Needs {
-			nu, err := ParseUniqname(need)
-			if err != nil {
-				return fmt.Errorf("release %q: %w", ck, err)
+		if r.Needs.Releases != nil {
+			canonNeeds := make(map[string]NeedRelease, len(r.Needs.Releases))
+			for need, opts := range r.Needs.Releases {
+				nu, err := ParseUniqname(need)
+				if err != nil {
+					return fmt.Errorf("release %q: %w", ck, err)
+				}
+				canonNeeds[nu.String()] = opts
 			}
-			r.Needs[i] = nu.String()
+			r.Needs.Releases = canonNeeds
 		}
 		canon[ck] = r
 	}

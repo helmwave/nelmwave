@@ -27,22 +27,44 @@ func Validate(cfg *Config) error {
 		if err := validateLabels(key, r.Labels); err != nil {
 			errs = append(errs, err)
 		}
-		for _, need := range r.Needs {
-			if need == key {
-				errs = append(errs, fmt.Errorf("release %q: needs itself", key))
-				continue
-			}
-			if _, ok := cfg.Releases[need]; !ok {
-				errs = append(errs, fmt.Errorf("release %q: needs unknown release %q", key, need))
-			}
-		}
+		errs = append(errs, validateNeeds(cfg, key, r)...)
 	}
 
-	if cycle := findCycle(cfg.Releases); len(cycle) > 0 {
+	if cycle := findCycle(cfg); len(cycle) > 0 {
 		errs = append(errs, fmt.Errorf("needs form a cycle: %s", formatCycle(cycle)))
 	}
 
 	return joinErrors(errs)
+}
+
+// validateNeeds checks a release's explicit needs (existence, no self-edge) and
+// that every needs.labels selector parses.
+func validateNeeds(cfg *Config, key string, r Release) []error {
+	var errs []error
+	for _, need := range sortedNeedKeys(r.Needs.Releases) {
+		if need == key {
+			errs = append(errs, fmt.Errorf("release %q: needs itself", key))
+			continue
+		}
+		if _, ok := cfg.Releases[need]; !ok {
+			errs = append(errs, fmt.Errorf("release %q: needs unknown release %q", key, need))
+		}
+	}
+	if !r.Needs.Labels.Empty() {
+		if _, err := r.Needs.Labels.Selector(); err != nil {
+			errs = append(errs, fmt.Errorf("release %q: needs.labels: %w", key, err))
+		}
+	}
+	return errs
+}
+
+func sortedNeedKeys(m map[string]NeedRelease) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func validateChartSource(name string, r Release) error {
@@ -58,21 +80,17 @@ func validateChartSource(name string, r Release) error {
 	}
 }
 
-// findCycle returns a cycle in the needs graph (list of release names), or nil.
-// Edges point from a release to each of its needs. Traversal is restricted to
-// known releases so unknown-need errors aren't double-reported here. Nodes are
-// visited in sorted order for deterministic output.
-func findCycle(releases map[string]Release) []string {
+// findCycle returns a cycle in the needs graph (list of release keys), or nil.
+// Edges point from a release to each of its resolved needs (explicit releases
+// plus label-matched releases). Invalid selectors are ignored here (reported by
+// Validate). Nodes are visited in sorted order for deterministic output.
+func findCycle(cfg *Config) []string {
+	releases := cfg.Releases
 	names := sortedReleaseNames(releases)
 
 	needs := make(map[string][]string, len(releases))
 	for _, name := range names {
-		for _, n := range releases[name].Needs {
-			if _, ok := releases[n]; ok && n != name {
-				needs[name] = append(needs[name], n)
-			}
-		}
-		sort.Strings(needs[name])
+		needs[name] = cfg.directNeedKeys(name, releases[name])
 	}
 
 	const (

@@ -6,9 +6,9 @@ package config
 type Release struct {
 	// Labels are used for k8s-style selection (-l) and are free-form.
 	Labels map[string]string `json:"labels" yaml:"labels"`
-	// Needs lists releases that must be applied before this one (DAG edges).
-	// Each entry is a release key ("name[@namespace[@kubecontext]]").
-	Needs []string `json:"needs" yaml:"needs"`
+	// Needs declares the releases that must be applied before this one (DAG
+	// edges), by explicit uniqname and/or by label selector.
+	Needs Needs `json:"needs" yaml:"needs,omitempty"`
 
 	// Chart points at a helm-repo or OCI chart. Mutually exclusive with Universal.
 	Chart Chart `json:"chart" yaml:"chart"`
