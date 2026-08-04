@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -45,16 +46,9 @@ type deployOptions struct {
 // selection, and applies op across it with bounded concurrency. It is engine-
 // agnostic via the Applier, so it can be driven by a fake in tests.
 func deploy(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deployOptions, applier release.Applier, op operation) error {
-	sel, err := config.ParseSelector(o.selector)
+	active, err := selectActive(p, o.selector)
 	if err != nil {
 		return err
-	}
-
-	active := make(map[string]struct{})
-	for _, key := range p.ReleaseNames() {
-		if sel.Matches(labels.Set(p.Releases[key].Labels)) {
-			active[key] = struct{}{}
-		}
 	}
 	if len(active) == 0 {
 		logger.Warn("no releases match the selector", zap.String("selector", o.selector))
@@ -101,6 +95,71 @@ func deploy(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deployOptio
 	}
 
 	return summarize(logger, op.verb(), graph.Run(ctx, deps, o.concurrency, fn))
+}
+
+// selectActive returns the set of release keys whose labels match selector.
+func selectActive(p *plan.Plan, selector string) (map[string]struct{}, error) {
+	sel, err := config.ParseSelector(selector)
+	if err != nil {
+		return nil, err
+	}
+	active := make(map[string]struct{})
+	for _, key := range p.ReleaseNames() {
+		if sel.Matches(labels.Set(p.Releases[key].Labels)) {
+			active[key] = struct{}{}
+		}
+	}
+	return active, nil
+}
+
+// diffReleases plans (without applying) every selected release and prints the
+// diff nelm produces. With detailedExitCode it returns an *exitError with code
+// 2 when any release has planned changes.
+func diffReleases(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deployOptions, detailedExitCode bool, applier release.Applier) error {
+	active, err := selectActive(p, o.selector)
+	if err != nil {
+		return err
+	}
+	if len(active) == 0 {
+		logger.Warn("no releases match the selector", zap.String("selector", o.selector))
+		return nil
+	}
+
+	deps := buildEdges(p, active)
+	absOut, err := filepath.Abs(o.output)
+	if err != nil {
+		return err
+	}
+
+	var mu sync.Mutex
+	var changed []string
+	fn := func(ctx context.Context, key string) error {
+		spec, err := buildSpec(key, p.Releases[key], absOut, o)
+		if err != nil {
+			return err
+		}
+		l := logger.With(zap.String("release", key), zap.String("namespace", spec.Namespace))
+		l.Info("diff started")
+		c, err := applier.Plan(ctx, spec, detailedExitCode)
+		if err != nil {
+			return err
+		}
+		if c {
+			mu.Lock()
+			changed = append(changed, key)
+			mu.Unlock()
+		}
+		return nil
+	}
+
+	if err := summarize(logger, "diff", graph.Run(ctx, deps, o.concurrency, fn)); err != nil {
+		return err
+	}
+	if detailedExitCode && len(changed) > 0 {
+		sort.Strings(changed)
+		return &exitError{code: 2, message: fmt.Sprintf("changes planned for %d release(s): %s", len(changed), strings.Join(changed, ", "))}
+	}
+	return nil
 }
 
 // buildEdges returns dependency edges among active releases only; edges to

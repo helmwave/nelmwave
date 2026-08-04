@@ -486,7 +486,10 @@ releases:
    строгий need вне выборки → ошибка, нестрогий → warn+drop, `--include-needs` дотягивает.
    k8s.io/* запинены на 0.29.x (nelm). Юнит-тесты на graph и deploy (fake Applier); реальный
    деплой — на kind (вне автотестов без кластера).
-4. **M4 — diff/plan.** `action.ReleasePlanInstall`, `--detailed-exitcode`.
+4. **M4 — diff/plan. ✅ Готово.** `action.ReleasePlanInstall` через `Applier.Plan`;
+   `--detailed-exitcode` → exit 2 при изменениях (сентинелы nelm `ErrChangesPlanned` и др.;
+   `cli.exitError{code}` в Execute). `up --dry-run` делегирует в diff. graph.Run ловит паники.
+   ВАЖНО: перед `action.*` привязать логгер к ctx (`nelmlog.SetupLogging`), иначе паника logboek.
 5. **M5 — Универсальный chart. [ОТЛОЖЕНО — пост-MVP]** `go:embed` chart, confijer-values, набор
    ресурсов из §12, активация через `universal:`. В MVP не входит; `chart.name` обязателен.
 6. **M6 — Registries/repos.** OCI login, helm repo, переопределение repo/registry config.

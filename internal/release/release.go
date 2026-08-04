@@ -31,8 +31,12 @@ type Spec struct {
 	AutoRollback bool
 }
 
-// Applier installs and uninstalls releases through a deploy engine.
+// Applier installs, uninstalls and plans releases through a deploy engine.
 type Applier interface {
 	Install(ctx context.Context, s Spec) error
 	Uninstall(ctx context.Context, s Spec) error
+	// Plan computes the changes an install would make, without applying them.
+	// When errorIfChanges is set, it reports whether any changes are planned via
+	// the returned changed flag (instead of as an error).
+	Plan(ctx context.Context, s Spec, errorIfChanges bool) (changed bool, err error)
 }

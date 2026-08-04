@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -45,10 +44,6 @@ func runUp(cmd *cobra.Command, g *globalOptions, o *upOptions) error {
 	ctx := cmd.Context()
 	logger := loggerFrom(ctx).With(zap.String("phase", "up"))
 
-	if o.dryRun {
-		return errors.New("--dry-run delegates to diff, implemented in the diff milestone (M4)")
-	}
-
 	if o.build {
 		manifest, err := resolveManifest(o.file, cmd.Flags().Changed("file"))
 		if err != nil {
@@ -64,12 +59,18 @@ func runUp(cmd *cobra.Command, g *globalOptions, o *upOptions) error {
 		return fmt.Errorf("%w (run `nelmwave build` first, or pass --build)", err)
 	}
 
-	return deploy(ctx, logger, p, deployOptions{
+	opts := deployOptions{
 		output:       o.output,
 		selector:     o.selector,
 		concurrency:  o.concurrency,
 		includeNeeds: o.includeNeeds,
 		kubeContext:  g.kubeContext,
 		kubeConfig:   g.kubeConfig,
-	}, release.NelmApplier{}, opInstall)
+	}
+
+	// --dry-run plans instead of applying.
+	if o.dryRun {
+		return diffReleases(ctx, logger, p, opts, false, release.NelmApplier{})
+	}
+	return deploy(ctx, logger, p, opts, release.NelmApplier{}, opInstall)
 }

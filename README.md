@@ -10,11 +10,13 @@ manifest: it renders the manifest through gomplate, resolves values and
 companion files from arbitrary datasources, builds a dependency graph between
 releases, and applies everything through nelm — in parallel, respecting order.
 
-> **Status: early development (M3).** `build` renders/validates a manifest and
-> resolves values/store datasources into `.nelmwave/`. `up` and `down` select
-> releases by label, build the dependency DAG, and apply them through nelm —
-> in parallel, respecting order (`down` in reverse). `diff` is next — see the
-> milestones in [`prompt.md`](./prompt.md).
+> **Status: early development (M4).** `build` renders/validates a manifest and
+> resolves values/store datasources into `.nelmwave/`. `up`/`down` select
+> releases by label, build the dependency DAG, and apply them through nelm — in
+> parallel, respecting order (`down` in reverse). `diff` (alias `plan`) shows
+> pending changes (`--detailed-exitcode` exits 2 when changes are planned);
+> `up --dry-run` delegates to it. Registering helm repos / OCI registries with
+> nelm is next (M6) — see the milestones in [`prompt.md`](./prompt.md).
 
 ## Building
 

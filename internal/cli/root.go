@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -90,6 +91,15 @@ func Execute() int {
 	opts := &globalOptions{}
 	root := newRootCommand(opts)
 	if err := root.ExecuteContext(ctx); err != nil {
+		// An exitError carries a specific exit code and is not a failure (e.g.
+		// diff --detailed-exitcode reporting planned changes as code 2).
+		var ee *exitError
+		if errors.As(err, &ee) {
+			if opts.logger != nil {
+				opts.logger.Info(ee.message, zap.Int("exit-code", ee.code))
+			}
+			return ee.code
+		}
 		// opts.logger is nil only if we failed before PersistentPreRunE (e.g. a
 		// flag parse error), in which case cobra already printed the message.
 		if opts.logger != nil {
@@ -101,3 +111,12 @@ func Execute() int {
 	}
 	return 0
 }
+
+// exitError requests a specific process exit code without being treated as a
+// command failure.
+type exitError struct {
+	code    int
+	message string
+}
+
+func (e *exitError) Error() string { return e.message }

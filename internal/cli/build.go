@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,9 +15,6 @@ import (
 	"github.com/helmwave/nelmwave/internal/plan"
 	"github.com/helmwave/nelmwave/internal/tpl"
 )
-
-// errNotImplemented marks skeleton commands whose milestone is not done yet.
-var errNotImplemented = errors.New("not implemented yet")
 
 type buildOptions struct {
 	file   string

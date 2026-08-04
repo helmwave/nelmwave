@@ -18,7 +18,9 @@ type fakeApplier struct {
 	mu          sync.Mutex
 	installed   []string
 	uninstalled []string
+	planned     []string
 	fail        map[string]error
+	changes     map[string]bool // release name -> has planned changes
 }
 
 func (f *fakeApplier) Install(_ context.Context, s release.Spec) error {
@@ -33,6 +35,16 @@ func (f *fakeApplier) Uninstall(_ context.Context, s release.Spec) error {
 	defer f.mu.Unlock()
 	f.uninstalled = append(f.uninstalled, s.Name)
 	return f.fail[s.Name]
+}
+
+func (f *fakeApplier) Plan(_ context.Context, s release.Spec, errorIfChanges bool) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.planned = append(f.planned, s.Name)
+	if err := f.fail[s.Name]; err != nil {
+		return false, err
+	}
+	return errorIfChanges && f.changes[s.Name], nil
 }
 
 // a@ns (no needs) and b@ns (needs a@ns, optionally strict).
@@ -123,5 +135,35 @@ func TestDeploy_FailureAggregatesAndSkipsDependents(t *testing.T) {
 	// b depends on a, so b must be skipped (never installed).
 	if slices.Contains(f.installed, "b") {
 		t.Errorf("b should have been skipped, installed = %v", f.installed)
+	}
+}
+
+func TestDiff_PlansSelectedReleases(t *testing.T) {
+	f := &fakeApplier{}
+	err := diffReleases(context.Background(), zap.NewNop(), testPlan(false), opts("", false), false, f)
+	if err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	if len(f.planned) != 2 {
+		t.Errorf("planned = %v, want both releases", f.planned)
+	}
+	if len(f.installed) != 0 || len(f.uninstalled) != 0 {
+		t.Error("diff must not install or uninstall anything")
+	}
+}
+
+func TestDiff_DetailedExitCodeOnChanges(t *testing.T) {
+	f := &fakeApplier{changes: map[string]bool{"a": true}}
+	err := diffReleases(context.Background(), zap.NewNop(), testPlan(false), opts("", false), true, f)
+	var ee *exitError
+	if !errors.As(err, &ee) || ee.code != 2 {
+		t.Fatalf("want exitError code 2, got %v", err)
+	}
+}
+
+func TestDiff_DetailedExitCodeNoChanges(t *testing.T) {
+	f := &fakeApplier{} // no changes
+	if err := diffReleases(context.Background(), zap.NewNop(), testPlan(false), opts("", false), true, f); err != nil {
+		t.Fatalf("no changes should exit cleanly, got %v", err)
 	}
 }

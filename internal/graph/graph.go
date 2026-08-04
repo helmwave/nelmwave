@@ -74,7 +74,7 @@ func Run(ctx context.Context, deps map[string][]string, concurrency int, fn func
 			}
 
 			sem <- struct{}{}
-			err := fn(ctx, node)
+			err := safeCall(ctx, node, fn)
 			<-sem
 
 			mu.Lock()
@@ -84,6 +84,17 @@ func Run(ctx context.Context, deps map[string][]string, concurrency int, fn func
 	}
 	wg.Wait()
 	return results
+}
+
+// safeCall runs fn, converting a panic into an error so one node's crash does
+// not take down the whole run.
+func safeCall(ctx context.Context, node string, fn func(context.Context, string) error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return fn(ctx, node)
 }
 
 // Reverse flips edge direction: if a depends on b in deps, then in the result b
