@@ -16,6 +16,7 @@ import (
 	"github.com/helmwave/nelmwave/internal/graph"
 	"github.com/helmwave/nelmwave/internal/plan"
 	"github.com/helmwave/nelmwave/internal/release"
+	"github.com/helmwave/nelmwave/internal/repo"
 )
 
 type operation int
@@ -40,6 +41,9 @@ type deployOptions struct {
 	includeNeeds bool
 	kubeContext  string
 	kubeConfig   string
+	// registryConfigPath is set internally to a generated Docker config.json for
+	// OCI credentials (see repo.DockerConfig).
+	registryConfigPath string
 }
 
 // deploy selects releases by label, resolves the dependency graph within the
@@ -75,8 +79,14 @@ func deploy(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deployOptio
 		return err
 	}
 
+	cleanup, err := o.setupRegistryConfig(p)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
 	fn := func(ctx context.Context, key string) error {
-		spec, err := buildSpec(key, p.Releases[key], absOut, o)
+		spec, err := buildSpec(key, p.Releases[key], p.Repositories, absOut, o)
 		if err != nil {
 			return err
 		}
@@ -131,10 +141,16 @@ func diffReleases(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deplo
 		return err
 	}
 
+	cleanup, err := o.setupRegistryConfig(p)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
 	var mu sync.Mutex
 	var changed []string
 	fn := func(ctx context.Context, key string) error {
-		spec, err := buildSpec(key, p.Releases[key], absOut, o)
+		spec, err := buildSpec(key, p.Releases[key], p.Repositories, absOut, o)
 		if err != nil {
 			return err
 		}
@@ -225,8 +241,20 @@ func checkStrictNeeds(p *plan.Plan, active map[string]struct{}, logger *zap.Logg
 	return nil
 }
 
-// buildSpec turns a plan release into an engine-agnostic release.Spec.
-func buildSpec(key string, rel plan.Release, absOut string, o deployOptions) (release.Spec, error) {
+// setupRegistryConfig generates a Docker config.json for OCI repositories that
+// carry credentials and records its path on o; the returned func removes it.
+func (o *deployOptions) setupRegistryConfig(p *plan.Plan) (func(), error) {
+	path, cleanup, err := repo.DockerConfig(p.Repositories)
+	if err != nil {
+		return func() {}, err
+	}
+	o.registryConfigPath = path
+	return cleanup, nil
+}
+
+// buildSpec turns a plan release into an engine-agnostic release.Spec, resolving
+// its chart against the declared repositories.
+func buildSpec(key string, rel plan.Release, repos map[string]config.Repository, absOut string, o deployOptions) (release.Spec, error) {
 	id, err := config.ParseUniqname(key)
 	if err != nil {
 		return release.Spec{}, err
@@ -252,17 +280,26 @@ func buildSpec(key string, rel plan.Release, absOut string, o deployOptions) (re
 		}
 	}
 
+	chart := repo.Resolve(rel.Chart.Name, repos)
+
 	return release.Spec{
-		Name:            id.Name,
-		Namespace:       namespace,
-		KubeContext:     kubeContext,
-		KubeConfig:      o.kubeConfig,
-		Chart:           rel.Chart.Name,
-		ChartVersion:    rel.Chart.Version,
-		ValuesFiles:     valuesFiles,
-		Timeout:         timeout,
-		CreateNamespace: rel.Options.CreateNamespace,
-		AutoRollback:    rel.Options.AutoRollback,
+		Name:               id.Name,
+		Namespace:          namespace,
+		KubeContext:        kubeContext,
+		KubeConfig:         o.kubeConfig,
+		Chart:              chart.Ref,
+		ChartVersion:       rel.Chart.Version,
+		ValuesFiles:        valuesFiles,
+		Timeout:            timeout,
+		CreateNamespace:    rel.Options.CreateNamespace,
+		AutoRollback:       rel.Options.AutoRollback,
+		RepoURL:            chart.RepoURL,
+		RepoUsername:       chart.Username,
+		RepoPassword:       chart.Password,
+		RepoSkipTLS:        chart.SkipTLSVerify,
+		RepoPassCreds:      chart.PassCredentials,
+		RepoCAFile:         chart.CAFile,
+		RegistryConfigPath: o.registryConfigPath,
 	}, nil
 }
 

@@ -15,8 +15,9 @@ releases, and applies everything through nelm — in parallel, respecting order.
 > releases by label, build the dependency DAG, and apply them through nelm — in
 > parallel, respecting order (`down` in reverse). `diff` (alias `plan`) shows
 > pending changes (`--detailed-exitcode` exits 2 when changes are planned);
-> `up --dry-run` delegates to it. Registering helm repos / OCI registries with
-> nelm is next (M6) — see the milestones in [`prompt.md`](./prompt.md).
+> `up --dry-run` delegates to it. Charts resolve against the declared
+> `repositories` (helm repos and OCI registries, with credentials). See the
+> milestones in [`prompt.md`](./prompt.md).
 
 ## Building
 
@@ -68,7 +69,8 @@ internal/
   build/             # resolve a config's datasources into .nelmwave/ artifacts
   plan/              # .nelmwave/ plan build/read/write
   graph/             # concurrent dependency-DAG executor
-  release/           # Applier over nelm (install/uninstall)
+  release/           # Applier over nelm (install/uninstall/plan)
+  repo/              # resolve chart refs against repositories; OCI docker config
   log/               # zap setup (auto console/json)
   version/           # build-time version info
 ```

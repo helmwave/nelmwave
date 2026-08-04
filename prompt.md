@@ -165,6 +165,7 @@ github.com/helmwave/nelmwave
 │   ├── build/              # оркестрация: резолв datasources → артефакты .nelmwave/
 │   ├── graph/              # параллельный DAG-исполнитель (Run, Reverse)
 │   ├── release/            # Applier (интерфейс) + NelmApplier поверх nelm/pkg/action
+│   ├── repo/               # резолв chart.name→nelm (helm-repo/OCI), docker config для OCI
 │   ├── plan/               # planfile: сборка, сериализация в .nelmwave/, чтение
 │   ├── graph/              # DAG: needs между релизами, топосорт, параллельный проход
 │   ├── release/            # адаптер к nelm/pkg/action (install/uninstall/plan/render)
@@ -492,7 +493,11 @@ releases:
    ВАЖНО: перед `action.*` привязать логгер к ctx (`nelmlog.SetupLogging`), иначе паника logboek.
 5. **M5 — Универсальный chart. [ОТЛОЖЕНО — пост-MVP]** `go:embed` chart, confijer-values, набор
    ресурсов из §12, активация через `universal:`. В MVP не входит; `chart.name` обязателен.
-6. **M6 — Registries/repos.** OCI login, helm repo, переопределение repo/registry config.
+6. **M6 — Registries/repos. ✅ Готово.** `internal/repo`: `Resolve` мапит chart.name на nelm —
+   `oci://`→passthrough, `alias/chart`→ChartRepoURL+basic-auth (helm `--repo`, без repositories.yaml),
+   иначе локально; `DockerConfig` генерит временный docker config.json для OCI-кредов
+   (`RegistryCredentialsPath`). ВАЖНО: удалённые чарты за feature gate — включаем
+   `featgate.FeatGateRemoteCharts.Enable()` в init пакета release.
 7. **M7 — Needs между ресурсами.** Аннотации nelm в универсальном chart'е (+ по возможности внешние).
 8. **M8 — Полировка.** Логи, ошибки, docs, `--help`, примеры в `examples/`.
 

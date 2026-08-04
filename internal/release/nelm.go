@@ -5,8 +5,27 @@ import (
 	"errors"
 
 	"github.com/werf/nelm/pkg/action"
+	"github.com/werf/nelm/pkg/common"
+	"github.com/werf/nelm/pkg/featgate"
 	nelmlog "github.com/werf/nelm/pkg/log"
 )
+
+func init() {
+	// nelmwave charts are almost always remote (repo/chart or oci://), which nelm
+	// gates behind a feature flag that is off by default. Enable it up front.
+	featgate.FeatGateRemoteCharts.Enable()
+}
+
+// applyRepo copies the spec's helm chart-repository connection settings into
+// nelm's ChartRepoConnectionOptions.
+func applyRepo(o *common.ChartRepoConnectionOptions, s Spec) {
+	o.ChartRepoURL = s.RepoURL
+	o.ChartRepoBasicAuthUsername = s.RepoUsername
+	o.ChartRepoBasicAuthPassword = s.RepoPassword
+	o.ChartRepoSkipTLSVerify = s.RepoSkipTLS
+	o.ChartRepoPassCreds = s.RepoPassCreds
+	o.ChartRepoCAPath = s.RepoCAFile
+}
 
 // NelmApplier is the production Applier backed by github.com/werf/nelm.
 type NelmApplier struct{}
@@ -21,15 +40,17 @@ func nelmContext(ctx context.Context) context.Context {
 func (NelmApplier) Install(ctx context.Context, s Spec) error {
 	ctx = nelmContext(ctx)
 	opts := action.ReleaseInstallOptions{
-		Chart:             s.Chart,
-		ChartVersion:      s.ChartVersion,
-		AutoRollback:      s.AutoRollback,
-		NoCreateNamespace: !s.CreateNamespace,
-		Timeout:           s.Timeout,
+		Chart:                   s.Chart,
+		ChartVersion:            s.ChartVersion,
+		AutoRollback:            s.AutoRollback,
+		NoCreateNamespace:       !s.CreateNamespace,
+		Timeout:                 s.Timeout,
+		RegistryCredentialsPath: s.RegistryConfigPath,
 	}
 	opts.ValuesFiles = s.ValuesFiles
 	opts.KubeConfigPaths = kubeConfigPaths(s.KubeConfig)
 	opts.KubeContextCurrent = s.KubeContext
+	applyRepo(&opts.ChartRepoConnectionOptions, s)
 	return action.ReleaseInstall(ctx, s.Name, s.Namespace, opts)
 }
 
@@ -50,13 +71,15 @@ func (NelmApplier) Uninstall(ctx context.Context, s Spec) error {
 func (NelmApplier) Plan(ctx context.Context, s Spec, errorIfChanges bool) (bool, error) {
 	ctx = nelmContext(ctx)
 	opts := action.ReleasePlanInstallOptions{
-		Chart:                 s.Chart,
-		ChartVersion:          s.ChartVersion,
-		ErrorIfChangesPlanned: errorIfChanges,
+		Chart:                   s.Chart,
+		ChartVersion:            s.ChartVersion,
+		ErrorIfChangesPlanned:   errorIfChanges,
+		RegistryCredentialsPath: s.RegistryConfigPath,
 	}
 	opts.ValuesFiles = s.ValuesFiles
 	opts.KubeConfigPaths = kubeConfigPaths(s.KubeConfig)
 	opts.KubeContextCurrent = s.KubeContext
+	applyRepo(&opts.ChartRepoConnectionOptions, s)
 
 	err := action.ReleasePlanInstall(ctx, s.Name, s.Namespace, opts)
 	if errorIfChanges && changesPlanned(err) {

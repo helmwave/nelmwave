@@ -17,11 +17,24 @@ type Spec struct {
 	// KubeConfig is an optional kubeconfig path; empty uses nelm's default.
 	KubeConfig string
 
-	// Chart is the chart reference (repo/chart or oci://...), ChartVersion its version.
+	// Chart is the resolved chart reference (chart name for a helm repo, oci://
+	// URL for OCI, or a local path), ChartVersion its version.
 	Chart        string
 	ChartVersion string
 	// ValuesFiles are absolute paths to values files, in merge order.
 	ValuesFiles []string
+
+	// Chart-repository connection (helm repos). RepoURL empty means the chart is
+	// OCI or local and needs no repo lookup.
+	RepoURL       string
+	RepoUsername  string
+	RepoPassword  string
+	RepoSkipTLS   bool
+	RepoPassCreds bool
+	RepoCAFile    string
+	// RegistryConfigPath is a Docker config.json with OCI registry credentials
+	// (empty falls back to nelm's default, ~/.docker/config.json).
+	RegistryConfigPath string
 
 	// Timeout bounds the operation (0 = no timeout).
 	Timeout time.Duration
