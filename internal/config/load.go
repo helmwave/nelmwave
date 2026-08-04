@@ -41,7 +41,7 @@ func Parse(data []byte) (*Config, error) {
 
 // normalizeRefLists rewrites bare-string entries in the top-level values list
 // and in each release's values/store lists into {src: <string>} maps, so
-// confijer decodes them into ValueRef/StoreRef instead of dropping them.
+// confijer decodes them into FileRef instead of dropping them.
 func normalizeRefLists(root map[string]any) {
 	if root == nil {
 		return

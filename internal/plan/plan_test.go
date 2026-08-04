@@ -20,7 +20,7 @@ func TestFromConfig_AndRoundTrip(t *testing.T) {
 				Labels:    map[string]string{"app": "api"},
 				Needs:     []string{"db"},
 				Chart:     config.Chart{Name: "oci://r/api", Version: "1.0.0"},
-				Values:    []config.ValueRef{{Src: "file://v.yml"}},
+				Values:    []config.FileRef{{Src: "file://v.yml"}},
 				Options:   config.ReleaseOptions{CreateNamespace: true},
 			},
 		},

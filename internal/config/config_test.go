@@ -164,7 +164,7 @@ func TestSelector_ParseAndMatch(t *testing.T) {
 	}
 }
 
-func TestParse_ValueRefForms(t *testing.T) {
+func TestParse_FileRefForms(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
   a:
@@ -198,7 +198,7 @@ releases:
 	}
 }
 
-func TestParse_StoreRefBareForm(t *testing.T) {
+func TestParse_StoreFileRefBareForm(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
   a:

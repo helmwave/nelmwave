@@ -23,5 +23,5 @@ type Config struct {
 	Releases map[string]Release `json:"releases" yaml:"releases"`
 	// Values are global value sources merged beneath every release's own
 	// values (lowest precedence). See the merge order in the datasource layer.
-	Values []ValueRef `json:"values" yaml:"values"`
+	Values []FileRef `json:"values" yaml:"values"`
 }

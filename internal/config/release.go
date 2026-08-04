@@ -16,9 +16,9 @@ type Release struct {
 	Universal *UniversalValues `json:"universal" yaml:"universal"`
 
 	// Values are per-release value sources, merged on top of global Values.
-	Values []ValueRef `json:"values" yaml:"values"`
+	Values []FileRef `json:"values" yaml:"values"`
 	// Store are companion files resolved and stored alongside the plan.
-	Store []StoreRef `json:"store" yaml:"store"`
+	Store []FileRef `json:"store" yaml:"store"`
 
 	// nelm option passthrough.
 	Options ReleaseOptions `json:"options" yaml:"options"`

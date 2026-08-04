@@ -45,8 +45,8 @@ type Release struct {
 	Needs     []string                `yaml:"needs,omitempty"`
 	Chart     config.Chart            `yaml:"chart,omitempty"`
 	Universal *config.UniversalValues `yaml:"universal,omitempty"`
-	Values    []config.ValueRef       `yaml:"values,omitempty"`
-	Store     []config.StoreRef       `yaml:"store,omitempty"`
+	Values    []config.FileRef        `yaml:"values,omitempty"`
+	Store     []config.FileRef        `yaml:"store,omitempty"`
 	Options   config.ReleaseOptions   `yaml:"options"`
 
 	// ValuesFile is the plan-relative path to the merged values file. Empty
