@@ -15,8 +15,8 @@
 > - **`chart.name`** вместо `chart.ref`.
 > - **`values` и `store` — единый тип `FileRef`** (`Src, Dst, Optional, Strict`), принимает 4
 >   эквивалентные формы (строка/мапа × со схемой/без; нет схемы или `file://` → голый путь).
-> - **`needs` — структура**: `needs.releases` (мапа по uniqname → `{strict, …}`) +
->   `needs.labels` (k8s `LabelSelector`: `matchLabels`+`matchExpressions`). Зависимость — объединение.
+> - **`needs` — структура**: `needs.releases` (мапа по uniqname → `{strict, …}`) + инлайн k8s-селектор
+>   `needs.matchLabels` + `needs.matchLabelsExpressions`. Зависимость — объединение.
 > - **Datasources — свой резолвер** на gomplate v5 (fileref v0.2.0 непригоден как библиотека).
 > - **SOPS отложен**: в MVP только `.yml`/`.yml.tpl`; `.yml.sops` → «not supported yet».
 > - **Встроенный универсальный chart отложен** (пост-MVP): `chart.name` обязателен, блока
@@ -66,7 +66,7 @@ nelm — параллельно, с учётом порядка.
 | Конфиг-загрузчик | **[helmwave/confijer](https://github.com/helmwave/confijer)** (defaults по Go-типам через reflection) |
 | Datasources (values, store files) | **собственный резолвер `internal/datasource` поверх gomplate v5** (fileref v0.2.0 непригоден как библиотека — `package main`, gomplate v4; см. §3.4) |
 | Схема nelmwave.yml | **новая**, вдохновлённая helmwave (НЕ drop-in совместимость). Коллекции — **мапы по идентификатору**, релиз — **uniqname** `name[@namespace[@kubecontext]]` (см. §5) |
-| Модель needs | **DAG с параллельностью** (топосорт + concurrent-исполнение независимых веток). Зависимости — по uniqname (`needs.releases`) и по k8s-селектору (`needs.labels`) |
+| Модель needs | **DAG с параллельностью** (топосорт + concurrent-исполнение независимых веток). Зависимости — по uniqname (`needs.releases`) и по инлайн k8s-селектору (`needs.matchLabels`/`needs.matchLabelsExpressions`) |
 | Селектор | **Kubernetes-style label selector** (`app=api,env in (prod,stg),tier!=db`) |
 | Хранилище build | каталог **`.nelmwave/`** (planfile + распакованные charts/values/store-files) |
 | Универсальный chart | **отложен (пост-MVP)**; в перспективе — вшит через `go:embed`, конфиг по confijer-схеме |
@@ -153,7 +153,7 @@ github.com/helmwave/nelmwave
 │   │   ├── config.go       # корневой Config (мапы по идентификатору)
 │   │   ├── release.go      # Release + Chart{Name,Version}
 │   │   ├── uniqname.go     # Uniqname name[@ns[@ctx]]: parse/канонизация ключей
-│   │   ├── needs.go        # Needs{Releases, Labels}, LabelSelector, DirectNeeds
+│   │   ├── needs.go        # Needs{Releases, MatchLabels, MatchLabelsExpressions}, DirectNeeds
 │   │   ├── fileref.go      # FileRef (единый для values и store)
 │   │   ├── repository.go   # Repository (helm repo)
 │   │   ├── registry.go     # Registry (OCI)
@@ -236,8 +236,8 @@ releases:
   cache@app:
     labels: { app: redis, tier: cache, env: prod }
     needs:
-      labels:                          # k8s LabelSelector: ждать все релизы-БД
-        matchLabels: { tier: db }
+      matchLabels: { tier: db }        # инлайн k8s-селектор: ждать все релизы-БД
+      # matchLabelsExpressions: [ { key: env, operator: In, values: [prod, stg] } ]
     chart:
       name: bitnami/redis
       version: 20.x
@@ -256,8 +256,9 @@ releases:
   *(блок `universal:`/`UniversalValues` отложен — §12.)*
 - **`FileRef`** (единый для values и store): `Src`, `Dst` (только store), `Optional`, `Strict`.
   Принимает 4 формы (строка/мапа × со схемой/без).
-- **`Needs`**: `Releases map[string]NeedRelease` (`{Strict, …}`) + `Labels *LabelSelector`
-  (`matchLabels`/`matchExpressions`, семантика k8s).
+- **`Needs`**: `Releases map[string]NeedRelease` (`{Strict, …}`) + инлайн селектор
+  `MatchLabels map[string]string` + `MatchLabelsExpressions []LabelSelectorRequirement`
+  (семантика k8s; пустой = ничего).
 - **Теги — двойные `json:"..." yaml:"..."`**: confijer биндит по `json`, planfile пишется по `yaml`.
   Теги `default:"..."` — там, где нужен дефолт (напр. `createNamespace:"true"`, `replicas:"1"`).
 
@@ -359,8 +360,8 @@ releases:
 - `Release.Needs` — **структура** (не `[]string`):
   - `needs.releases map[uniqname]NeedRelease` — явные зависимости по uniqname; значение
     расширяемое (сейчас `strict`).
-  - `needs.labels *LabelSelector` — k8s-селектор (`matchLabels`+`matchExpressions`); зависимость =
-    все релизы, попавшие под селектор. Пустой/nil селектор = ничего (НЕ «все»).
+  - `needs.matchLabels` + `needs.matchLabelsExpressions` — инлайн k8s-селектор; зависимость =
+    все релизы, попавшие под селектор. Пустой селектор = ничего (НЕ «все»).
   - Итог: релиз зависит от **объединения** `releases` и label-матчей. `Config.DirectNeeds()`
     резолвит конкретный набор ключей.
 - Построй ориентированный граф, проверь ацикличность (иначе ошибка build; цикл учитывает и

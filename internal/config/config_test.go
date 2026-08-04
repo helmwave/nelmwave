@@ -92,17 +92,16 @@ releases:
 `,
 			want: `needs unknown release "db@other"`,
 		},
-		"invalid needs.labels operator": {
+		"invalid matchLabelsExpressions operator": {
 			yml: `
 releases:
   a:
     chart: {name: r/a}
     needs:
-      labels:
-        matchExpressions:
-          - { key: env, operator: Bogus, values: [x] }
+      matchLabelsExpressions:
+        - { key: env, operator: Bogus, values: [x] }
 `,
-			want: "needs.labels",
+			want: "needs labels selector",
 		},
 		"invalid label key": {
 			yml: `
@@ -150,8 +149,7 @@ releases:
   api@app:
     labels: { tier: backend }
     needs:
-      labels:
-        matchLabels: { tier: db }
+      matchLabels: { tier: db }
     chart: { name: r/api }
 `)
 	if err := Validate(cfg); err != nil {
@@ -170,11 +168,11 @@ releases:
 releases:
   a@n:
     labels: { k: a }
-    needs: { labels: { matchLabels: { k: b } } }
+    needs: { matchLabels: { k: b } }
     chart: { name: r/a }
   b@n:
     labels: { k: b }
-    needs: { labels: { matchLabels: { k: a } } }
+    needs: { matchLabels: { k: a } }
     chart: { name: r/b }
 `)
 	if err := Validate(loop); err == nil || !strings.Contains(err.Error(), "cycle") {

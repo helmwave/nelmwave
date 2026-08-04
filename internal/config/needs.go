@@ -8,18 +8,21 @@ import (
 	"k8s.io/apimachinery/pkg/selection"
 )
 
-// Needs declares what a release depends on. Both parts are combined: a release
+// Needs declares what a release depends on. All parts are combined: a release
 // waits for every release named in Releases plus every release matched by the
-// Labels selector.
+// inlined label selector (MatchLabels + MatchLabelsExpressions, Kubernetes
+// semantics). An empty label selector adds no dependencies (it does NOT match
+// everything).
 type Needs struct {
 	// Releases lists explicit dependencies keyed by uniqname
 	// ("name[@namespace[@kubecontext]]"). The value carries per-dependency
 	// options (currently Strict); it is a struct so more can be added.
 	Releases map[string]NeedRelease `json:"releases" yaml:"releases,omitempty"`
-	// Labels is a Kubernetes label selector (matchLabels + matchExpressions).
-	// Every release whose labels satisfy it becomes a dependency. A nil or empty
-	// selector adds no dependencies (it does NOT match everything).
-	Labels *LabelSelector `json:"labels" yaml:"labels,omitempty"`
+	// MatchLabels selects dependency releases by exact label match.
+	MatchLabels map[string]string `json:"matchLabels" yaml:"matchLabels,omitempty"`
+	// MatchLabelsExpressions selects dependency releases by set-based label
+	// requirements (operators In, NotIn, Exists, DoesNotExist).
+	MatchLabelsExpressions []LabelSelectorRequirement `json:"matchLabelsExpressions" yaml:"matchLabelsExpressions,omitempty"`
 }
 
 // NeedRelease holds options for a single explicit release dependency.
@@ -29,50 +32,42 @@ type NeedRelease struct {
 	Strict bool `json:"strict" yaml:"strict,omitempty"`
 }
 
-// LabelSelector mirrors Kubernetes' metav1.LabelSelector so manifests use the
-// familiar matchLabels/matchExpressions shape. It carries both json (confijer
-// load) and yaml (plan serialization) tags.
-type LabelSelector struct {
-	MatchLabels      map[string]string          `json:"matchLabels" yaml:"matchLabels,omitempty"`
-	MatchExpressions []LabelSelectorRequirement `json:"matchExpressions" yaml:"matchExpressions,omitempty"`
-}
-
-// LabelSelectorRequirement is one matchExpressions entry.
+// LabelSelectorRequirement is one matchLabelsExpressions entry (same shape as
+// Kubernetes' metav1.LabelSelectorRequirement).
 type LabelSelectorRequirement struct {
 	Key      string   `json:"key" yaml:"key"`
 	Operator string   `json:"operator" yaml:"operator"`
 	Values   []string `json:"values" yaml:"values,omitempty"`
 }
 
-// Empty reports whether the selector constrains nothing.
-func (s *LabelSelector) Empty() bool {
-	return s == nil || (len(s.MatchLabels) == 0 && len(s.MatchExpressions) == 0)
+// labelsEmpty reports whether the inlined label selector constrains nothing.
+func (n Needs) labelsEmpty() bool {
+	return len(n.MatchLabels) == 0 && len(n.MatchLabelsExpressions) == 0
 }
 
-// Selector converts to an apimachinery labels.Selector using Kubernetes
-// semantics: matchLabels become equality requirements and matchExpressions use
-// the In/NotIn/Exists/DoesNotExist operators. An empty selector yields
-// labels.Nothing() so it adds no dependencies.
-func (s *LabelSelector) Selector() (labels.Selector, error) {
-	if s.Empty() {
+// labelSelector converts MatchLabels + MatchLabelsExpressions to an
+// apimachinery labels.Selector using Kubernetes semantics. An empty selector
+// yields labels.Nothing() so it adds no dependencies.
+func (n Needs) labelSelector() (labels.Selector, error) {
+	if n.labelsEmpty() {
 		return labels.Nothing(), nil
 	}
 	sel := labels.NewSelector()
 
-	keys := make([]string, 0, len(s.MatchLabels))
-	for k := range s.MatchLabels {
+	keys := make([]string, 0, len(n.MatchLabels))
+	for k := range n.MatchLabels {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		req, err := labels.NewRequirement(k, selection.Equals, []string{s.MatchLabels[k]})
+		req, err := labels.NewRequirement(k, selection.Equals, []string{n.MatchLabels[k]})
 		if err != nil {
 			return nil, err
 		}
 		sel = sel.Add(*req)
 	}
 
-	for _, e := range s.MatchExpressions {
+	for _, e := range n.MatchLabelsExpressions {
 		op, err := selectorOperator(e.Operator)
 		if err != nil {
 			return nil, err
@@ -86,8 +81,8 @@ func (s *LabelSelector) Selector() (labels.Selector, error) {
 	return sel, nil
 }
 
-// selectorOperator maps a matchExpressions operator string to its apimachinery
-// selection.Operator, mirroring Kubernetes' allowed set.
+// selectorOperator maps a matchLabelsExpressions operator string to its
+// apimachinery selection.Operator, mirroring Kubernetes' allowed set.
 func selectorOperator(op string) (selection.Operator, error) {
 	switch op {
 	case "In":
@@ -99,27 +94,21 @@ func selectorOperator(op string) (selection.Operator, error) {
 	case "DoesNotExist":
 		return selection.DoesNotExist, nil
 	default:
-		return "", fmt.Errorf("invalid matchExpressions operator %q (want In, NotIn, Exists or DoesNotExist)", op)
+		return "", fmt.Errorf("invalid matchLabelsExpressions operator %q (want In, NotIn, Exists or DoesNotExist)", op)
 	}
 }
 
 // DirectNeeds resolves the concrete set of release keys that release `self`
 // (with body r) depends on: explicit Releases that exist in the config, plus
-// releases matched by the Labels selector. Self is excluded, the result is
-// sorted and deduplicated. It errors on an invalid label selector.
+// releases matched by the inlined label selector. Self is excluded, the result
+// is sorted and deduplicated. It errors on an invalid label selector.
 func (c *Config) DirectNeeds(self string, r Release) ([]string, error) {
 	set := make(map[string]struct{})
-	for need := range r.Needs.Releases {
-		if need != self {
-			if _, ok := c.Releases[need]; ok {
-				set[need] = struct{}{}
-			}
-		}
-	}
-	if !r.Needs.Labels.Empty() {
-		sel, err := r.Needs.Labels.Selector()
+	addExplicit(set, c, self, r)
+	if !r.Needs.labelsEmpty() {
+		sel, err := r.Needs.labelSelector()
 		if err != nil {
-			return nil, fmt.Errorf("release %q: needs.labels: %w", self, err)
+			return nil, fmt.Errorf("release %q: needs labels selector: %w", self, err)
 		}
 		for key, other := range c.Releases {
 			if key != self && other.Matches(sel) {
@@ -136,16 +125,21 @@ func (c *Config) directNeedKeys(self string, r Release) []string {
 	keys, err := c.DirectNeeds(self, r)
 	if err != nil {
 		set := make(map[string]struct{})
-		for need := range r.Needs.Releases {
-			if need != self {
-				if _, ok := c.Releases[need]; ok {
-					set[need] = struct{}{}
-				}
-			}
-		}
+		addExplicit(set, c, self, r)
 		return sortedSet(set)
 	}
 	return keys
+}
+
+// addExplicit adds the existing, non-self explicit release dependencies to set.
+func addExplicit(set map[string]struct{}, c *Config, self string, r Release) {
+	for need := range r.Needs.Releases {
+		if need != self {
+			if _, ok := c.Releases[need]; ok {
+				set[need] = struct{}{}
+			}
+		}
+	}
 }
 
 func sortedSet(set map[string]struct{}) []string {

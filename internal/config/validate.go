@@ -50,9 +50,9 @@ func validateNeeds(cfg *Config, key string, r Release) []error {
 			errs = append(errs, fmt.Errorf("release %q: needs unknown release %q", key, need))
 		}
 	}
-	if !r.Needs.Labels.Empty() {
-		if _, err := r.Needs.Labels.Selector(); err != nil {
-			errs = append(errs, fmt.Errorf("release %q: needs.labels: %w", key, err))
+	if !r.Needs.labelsEmpty() {
+		if _, err := r.Needs.labelSelector(); err != nil {
+			errs = append(errs, fmt.Errorf("release %q: needs labels selector: %w", key, err))
 		}
 	}
 	return errs

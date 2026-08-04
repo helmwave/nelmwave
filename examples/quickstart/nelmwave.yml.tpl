@@ -48,12 +48,12 @@ releases:
   cache@app:
     labels: { app: redis, tier: cache, env: prod }
     needs:
-      # Kubernetes label selector: wait for every release it matches.
-      labels:
-        matchLabels:
-          tier: db
-        # matchExpressions:
-        #   - { key: env, operator: In, values: [prod, stg] }
+      # Kubernetes-style label selector inlined into needs: wait for every
+      # release it matches.
+      matchLabels:
+        tier: db
+      # matchLabelsExpressions:
+      #   - { key: env, operator: In, values: [prod, stg] }
     chart:
       name: bitnami/redis
       version: 20.x
