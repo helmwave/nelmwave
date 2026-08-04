@@ -193,3 +193,30 @@ func TestDeploy_PassesSetsToApplierAsTypedJSON(t *testing.T) {
 		t.Errorf("set JSON args = %v", got)
 	}
 }
+
+func TestSetJSONArgs_NestedMapsAndTypes(t *testing.T) {
+	args, err := setJSONArgs(map[string]any{
+		"image":        map[string]any{"tag": 111},
+		"foo":          map[string]any{"bar": map[string]any{"greet": "Hello"}},
+		"replicaCount": 3,
+		"image.tag":    "1.4.2",
+	})
+	if err != nil {
+		t.Fatalf("setJSONArgs: %v", err)
+	}
+	// Sorted keys; nested maps become JSON objects, types preserved.
+	want := []string{
+		`foo={"bar":{"greet":"Hello"}}`,
+		`image={"tag":111}`,
+		`image.tag="1.4.2"`,
+		`replicaCount=3`,
+	}
+	if len(args) != len(want) {
+		t.Fatalf("args = %v", args)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Errorf("arg[%d] = %q, want %q", i, args[i], want[i])
+		}
+	}
+}
