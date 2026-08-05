@@ -40,9 +40,22 @@ jobs:
     name: open release PR
     runs-on: ubuntu-latest
     steps:
+      # Same helmwave-bot app as the release workflow (org secrets GH_APP_ID /
+      # GH_APP_PRIVATE_KEY). It has to come before the checkout so the branch is
+      # pushed as the bot too: a branch pushed with GITHUB_TOKEN does not trigger
+      # workflows, and neither does a PR opened with it — the release PR would
+      # then sit there with no CI on the very commit that gets tagged.
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: miniscruff/changie-action@v2
         with:
@@ -83,11 +96,9 @@ jobs:
 
       - name: open the pull request
         env:
-          # A PR opened with GITHUB_TOKEN does not trigger `pull_request`
-          # workflows, so CI would not run on the release PR itself. Set the
-          # optional RELEASE_TOKEN secret (a PAT with `contents: write` and
-          # `pull-requests: write`) to get a fully checked release PR.
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # The app token, so `pull_request` CI actually runs on the release PR
+          # (see the comment on the app-token step above).
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ steps.batch.outputs.version }}
           NOTES: ${{ steps.batch.outputs.notes }}
         run: |
@@ -95,8 +106,10 @@ jobs:
 
           branch="release/${VERSION}"
 
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The identity of the app whose token pushes this branch — GitHub only
+          # marks the commit as authored by the bot when the email matches.
+          git config user.name  "helmwave-bot[bot]"
+          git config user.email "171518341+helmwave-bot[bot]@users.noreply.github.com"
 
           git switch -c "$branch"
           git add CHANGELOG.md .changes

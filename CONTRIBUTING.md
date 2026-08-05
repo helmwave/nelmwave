@@ -45,12 +45,17 @@ Kinds and the version bump each implies (`.changie.yaml`):
 
 | Kind | Bump |
 |---|---|
-| Added, Changed, Removed | minor |
+| Removed | major |
+| Added, Changed | minor |
 | Deprecated, Fixed, Security, Dependencies | patch |
 
-While the project is pre-1.0 a removal is still a minor bump — no kind derives a
-major bump, so `auto` can never jump to v1.0.0 on its own. Releasing v1.0.0 means
-picking `major` explicitly in the release-pr workflow.
+v1.0.0 shipped, so semver applies in full: one `Removed` fragment is enough to
+make the next release a major one. A breaking change that removes nothing has no
+kind of its own — file it under `Removed`, or run the release-pr workflow with an
+explicit `major` bump.
+
+Dependabot cannot run `changie new`, so its PRs skip this check entirely; the
+`Dependencies` kind is for a bump a human decides is worth announcing.
 
 ## Releasing
 

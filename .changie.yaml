@@ -8,7 +8,7 @@ versionExt: md
 versionFormat: "## {{ .Version }} — {{ .Time.Format \"2006-01-02\" }}"
 kindFormat: "### {{ .Kind }}"
 # `with` rather than a bare `{{ .Custom.Author }}`: a fragment written by hand or
-# by a bot has no custom values, and Go templates render those as `<no value>`
+# by a bot has no custom values, and Go templates render those as `<no value>`в
 # instead of failing.
 changeFormat: >-
   * {{ if .Custom.Issue }}[#{{ .Custom.Issue }}](https://github.com/helmwave/nelmwave/issues/{{ .Custom.Issue }}) {{ end }}{{ .Body }}{{ with .Custom.Author }} (@{{ . }}){{ end }}
@@ -30,16 +30,16 @@ custom:
     type: string
 
 # Keep a Changelog kinds, as header.tpl.md and CONTRIBUTING.md promise.
-# No kind maps to `auto: major` while the project is pre-1.0: with a 0.x version
-# a single breaking fragment would batch straight to v1.0.0. Run the release-pr
-# workflow with an explicit `major` bump when v1.0.0 is actually intended.
+# v1.0.0 shipped, so semver applies in full and a removal derives a major bump.
+# A breaking change that removes nothing has no kind of its own: file it under
+# Removed, or run the release-pr workflow with an explicit `major`.
 kinds:
   - label: Added
     auto: minor
   - label: Changed
     auto: minor
   - label: Removed
-    auto: minor
+    auto: major
   - label: Deprecated
     auto: patch
   - label: Fixed

@@ -155,8 +155,19 @@ dockers_v2:
 # failing on an invalid config. Revisit when casks work on Linux.
 #
 # Pushing to helmwave/homebrew-tap needs a token that reaches another repository;
-# GITHUB_TOKEN is scoped to this one. Without HOMEBREW_TAP_TOKEN the upload is
-# skipped instead of failing the release.
+# GITHUB_TOKEN is scoped to this one. There is no `token:` here on purpose —
+# goreleaser reads HOMEBREW_TAP_GITHUB_TOKEN by name, and the release workflow
+# fills it from the helmwave-bot app installation (org secrets GH_APP_ID /
+# GH_APP_PRIVATE_KEY), the same way helmwave releases do.
+#
+# An earlier revision made the upload conditional on the token and skipped it when
+# unset: v1.0.0 shipped with no formula in the tap and only a warning buried in the
+# log. Now the workflow cannot even tag without minting that token, and a run with
+# no HOMEBREW_TAP_GITHUB_TOKEN fails at the push instead of quietly succeeding.
+#
+# `skip_upload: auto` still holds back prereleases — `brew install nelmwave` must
+# not land on an rc. Snapshots never publish, so `goreleaser release --snapshot`
+# needs no token at all.
 brews:
   - name: nelmwave
     ids:
@@ -164,14 +175,17 @@ brews:
     repository:
       owner: helmwave
       name: homebrew-tap
-      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
     directory: Formula
     homepage: https://github.com/helmwave/nelmwave
     description: Declarative release orchestrator on top of nelm
-    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_TOKEN" "" }}auto{{ else }}true{{ end }}'
+    skip_upload: auto
+    # The token belongs to the helmwave-bot app, but the commit is authored by
+    # goreleaser's own identity — that is what every Formula/helmwave.rb commit in
+    # the tap is signed with, and one tap with two bot authors reads as two
+    # different automations.
     commit_author:
-      name: github-actions[bot]
-      email: 41898282+github-actions[bot]@users.noreply.github.com
+      name: goreleaserbot
+      email: bot@goreleaser.com
     # Matches Formula/helmwave.rb, which ships completions the same way.
     extra_install: |
       generate_completions_from_executable(bin/"nelmwave", "completion", shells: [:bash, :zsh, :fish])

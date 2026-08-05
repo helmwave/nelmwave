@@ -1,6 +1,6 @@
 module github.com/helmwave/nelmwave
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/getsops/sops/v3 v3.13.3

@@ -178,9 +178,12 @@ jobs:
     name: changelog fragment
     runs-on: ubuntu-latest
     # Release PRs carry the batched changelog itself, and a PR can opt out with
-    # the `skip-changelog` label (typos, CI-only changes).
+    # the `skip-changelog` label (typos, CI-only changes). Dependabot cannot run
+    # `changie new`, so every one of its PRs would fail this gate; the Dependencies
+    # kind is for fragments a human writes about a bump worth announcing.
     if: >-
       github.event_name == 'pull_request'
+      && github.event.pull_request.user.login != 'dependabot[bot]'
       && !startsWith(github.head_ref, 'release/')
       && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
     steps:

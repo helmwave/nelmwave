@@ -30,9 +30,32 @@ jobs:
     name: tag and publish
     runs-on: ubuntu-latest
     steps:
+      # The same helmwave-bot GitHub App the helmwave release uses, via the
+      # organization secrets GH_APP_ID / GH_APP_PRIVATE_KEY — no per-repository
+      # PAT to rotate, and the token expires an hour after the run.
+      #
+      # `owner` without `repositories` mints a token for every repository the app
+      # is installed on (it is installed org-wide), which is what pushing the
+      # formula to helmwave/homebrew-tap needs: GITHUB_TOKEN cannot reach another
+      # repository.
+      #
+      # First step on purpose: it fails outright when the app secrets are missing,
+      # so a misconfigured release stops before the tag exists. An earlier revision
+      # let goreleaser skip the Homebrew upload with a warning nobody reads, and
+      # v1.0.0 shipped with no formula in the tap.
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          # So the tag below is pushed by the bot, matching the author it is
+          # stamped with and the identity that publishes everything downstream.
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: actions/setup-go@v6
         with:
@@ -84,8 +107,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name  "helmwave-bot[bot]"
+          git config user.email "171518341+helmwave-bot[bot]@users.noreply.github.com"
 
           git tag -a "$VERSION" -m "$VERSION"
           git push origin "$VERSION"
@@ -111,10 +134,14 @@ jobs:
           version: '~> v2'
           args: release --clean --release-notes .changes/${{ steps.version.outputs.version }}.md
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: without it the Homebrew formula upload is skipped instead of
-          # failing the release (see brews.skip_upload in .goreleaser.yaml).
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # The app token, not GITHUB_TOKEN: the GitHub release and the tap commit
+          # both come from helmwave-bot, exactly as in helmwave. (The ghcr push
+          # authenticates separately, through the docker login step above.)
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          # goreleaser reads this by name for `brews` — no `token:` in
+          # .goreleaser.yaml, so a local `goreleaser release` cannot silently fall
+          # back to a personal token.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           BUILD_DATE: ${{ steps.version.outputs.date }}
 
       - name: summary

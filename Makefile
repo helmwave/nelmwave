@@ -76,7 +76,13 @@ e2e:
 	$(MAKE) e2e-test; status=$$?; $(MAKE) e2e-down; exit $$status
 
 ## e2e-up: start the k3s fixture and wait for its healthcheck to pass.
+# The kubeconfig directory is created here, not by the bind mount: a rootful
+# docker creates a missing mount source as root:root, and then nothing outside
+# the container can delete the kubeconfig k3s drops into it — e2e-down fails with
+# "Permission denied". Owning the directory ourselves keeps teardown possible,
+# since removing a file needs write permission on its directory, not on the file.
 e2e-up:
+	mkdir -p $(dir $(KUBECONFIG_PATH))
 	$(COMPOSE) -f $(COMPOSE_FILE) up -d --wait
 
 ## e2e-test: run the suite against the running fixture.
@@ -86,4 +92,4 @@ e2e-test:
 ## e2e-down: remove the fixture and its volumes.
 e2e-down:
 	$(COMPOSE) -f $(COMPOSE_FILE) down -v
-	rm -rf test/e2e/.kube
+	rm -rf $(dir $(KUBECONFIG_PATH))
