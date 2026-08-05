@@ -162,6 +162,59 @@ func TestKubeConnection_ConfigPathsPrecedence(t *testing.T) {
 	}
 }
 
+// With no --kube-config, $KUBECONFIG decides — as it does for kubectl. Falling
+// back to ~/.kube/config while the environment points elsewhere would deploy to
+// the wrong cluster, silently and successfully.
+func TestKubeConnection_KubeconfigFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	if err := os.MkdirAll(filepath.Join(home, ".kube"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	kubeconfig := func(server, ctx string) string {
+		return "apiVersion: v1\nkind: Config\nclusters:\n  - name: c\n    cluster: { server: " + server +
+			", insecure-skip-tls-verify: true }\ncontexts:\n  - name: " + ctx +
+			"\n    context: { cluster: c, user: u }\ncurrent-context: " + ctx +
+			"\nusers:\n  - name: u\n    user: { token: t }\n"
+	}
+	// The home kubeconfig must lose: it is the cluster a mistake would reach.
+	if err := os.WriteFile(filepath.Join(home, ".kube", "config"),
+		[]byte(kubeconfig("https://home:6443", "home")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := filepath.Join(dir, "env.yml")
+	if err := os.WriteFile(env, []byte(kubeconfig("https://env:6443", "env")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", home)
+	t.Setenv("KUBECONFIG", env)
+
+	cfg, err := KubeConnection{}.RESTConfig("")
+	if err != nil {
+		t.Fatalf("RESTConfig: %v", err)
+	}
+	if cfg.Host != "https://env:6443" {
+		t.Errorf("host = %q, want the cluster $KUBECONFIG points at", cfg.Host)
+	}
+
+	// nelm has to read the very same files, so it is handed the resolved list
+	// rather than the empty one.
+	var o common.KubeConnectionOptions
+	applyKube(&o, Spec{Kube: KubeConnection{}})
+	if len(o.KubeConfigPaths) != 1 || o.KubeConfigPaths[0] != env {
+		t.Errorf("nelm config paths = %v, want [%s]", o.KubeConfigPaths, env)
+	}
+
+	// An explicit flag still wins over the environment, and ":"-separated entries
+	// split like kubectl splits them.
+	paths := KubeConnection{ConfigPaths: []string{"/a" + string(os.PathListSeparator) + "/b", "/c"}}.
+		ConfigPathPrecedence()
+	if len(paths) != 3 || paths[0] != "/a" || paths[1] != "/b" || paths[2] != "/c" {
+		t.Errorf("precedence = %v, want [/a /b /c]", paths)
+	}
+}
+
 func TestApplyKube(t *testing.T) {
 	s := Spec{
 		KubeContext: "staging",

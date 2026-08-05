@@ -1,0 +1,5 @@
+apiVersion: v2
+name: demo
+description: Local chart backing the demo cast — a ConfigMap and a pause Deployment.
+type: application
+version: 0.1.0

@@ -34,8 +34,8 @@ cat .nelmwave/planfile.yml
 resolves everything locally into `.nelmwave/`. `up`, `down` and `diff` need a
 Kubernetes cluster.
 
-[`demo/`](./demo) holds a one-minute asciicast of that loop — `asciinema play
-demo/nelmwave.cast`.
+[`demo/`](./demo) holds an asciicast of the full loop against a throwaway
+cluster — `asciinema play demo/nelmwave.cast`.
 
 [`examples/`](./examples) has a runnable project per feature area — dependencies,
 chart sources, namespaces, resource policies, release storage, sops-encrypted
@@ -616,10 +616,12 @@ instead of listing the current directory.
 
 ### Reaching the cluster
 
-By default nelmwave reads a kubeconfig, exactly as `kubectl` would. `--kube-config`
-is repeatable and behaves like `KUBECONFIG=a:b` — files merge, and where they
-disagree the earlier one wins. A release's uniqname picks the context
+By default nelmwave reads a kubeconfig, exactly as `kubectl` would: `$KUBECONFIG`
+when it is set, `~/.kube/config` otherwise. `--kube-config` overrides that and is
+repeatable, behaving like `KUBECONFIG=a:b` — files merge, and where they disagree
+the earlier one wins. A release's uniqname picks the context
 (`api@app@staging`), and `--kube-context` sets it for releases that name none.
+Every command resolves the connection the same way, `down` included.
 
 Where there is no kubeconfig — CI with a ServiceAccount token — the connection
 can be given directly:

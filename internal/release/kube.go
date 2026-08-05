@@ -3,6 +3,7 @@ package release
 import (
 	"encoding/base64"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -22,8 +23,9 @@ import (
 // Spec.KubeContext), so it varies per release while everything else does not.
 type KubeConnection struct {
 	// ConfigPaths are kubeconfig files in precedence order; ConfigBase64 is a
-	// whole kubeconfig passed by value instead. Empty means the usual default
-	// (~/.kube/config, in-cluster).
+	// whole kubeconfig passed by value instead. Empty means the usual client-go
+	// default: $KUBECONFIG if set, ~/.kube/config otherwise (see
+	// ConfigPathPrecedence).
 	ConfigPaths  []string
 	ConfigBase64 string
 	// ContextCluster / ContextUser override the cluster and user of the selected
@@ -114,11 +116,38 @@ func (k KubeConnection) clientConfig(currentContext string) (clientcmd.ClientCon
 	}
 
 	rules := &clientcmd.ClientConfigLoadingRules{
-		Precedence:          k.ConfigPaths,
+		Precedence:          k.ConfigPathPrecedence(),
 		MigrationRules:      clientcmd.NewDefaultClientConfigLoadingRules().MigrationRules,
 		DefaultClientConfig: &clientcmd.DefaultClientConfig,
 	}
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides), nil
+}
+
+// ConfigPathPrecedence is the list of kubeconfig files to read, in precedence
+// order. An explicit --kube-config wins, with ":"-separated entries split like
+// kubectl splits them; with no flag, client-go's own rules apply — $KUBECONFIG
+// if set, ~/.kube/config otherwise.
+//
+// Resolving the fallback here rather than leaving the list empty is the point:
+// nelm defaults an empty list to ~/.kube/config and never looks at $KUBECONFIG,
+// so an empty list would silently deploy to whatever the home kubeconfig's
+// current-context happens to be — a live cluster, while the environment pointed
+// at a throwaway one. The paths also have to be the same ones nelm reads, or
+// namespace metadata and releases would land in different clusters.
+func (k KubeConnection) ConfigPathPrecedence() []string {
+	if len(k.ConfigPaths) == 0 {
+		return clientcmd.NewDefaultClientConfigLoadingRules().Precedence
+	}
+
+	paths := make([]string, 0, len(k.ConfigPaths))
+	for _, p := range k.ConfigPaths {
+		for _, split := range filepath.SplitList(p) {
+			if split != "" {
+				paths = append(paths, split)
+			}
+		}
+	}
+	return paths
 }
 
 // RESTConfig builds the client configuration nelmwave uses for its own cluster
@@ -178,7 +207,9 @@ func burstLimit(v int) int {
 // applyKube copies the connection into nelm's options.
 func applyKube(o *common.KubeConnectionOptions, s Spec) {
 	k := s.Kube
-	o.KubeConfigPaths = k.ConfigPaths
+	// Resolved, not raw: nelm's own fallback for an empty list ignores
+	// $KUBECONFIG (see ConfigPathPrecedence).
+	o.KubeConfigPaths = k.ConfigPathPrecedence()
 	o.KubeConfigBase64 = k.ConfigBase64
 	o.KubeContextCurrent = s.KubeContext
 	o.KubeContextCluster = k.ContextCluster

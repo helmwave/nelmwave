@@ -1,0 +1,7 @@
+# Every release in the demo overrides these, through values files or `sets`.
+message: default
+replicas: 1
+
+# pause does nothing and exits never — enough for a Deployment to become ready
+# without pulling anything substantial.
+image: registry.k8s.io/pause:3.9

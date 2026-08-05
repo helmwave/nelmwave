@@ -122,6 +122,11 @@ func (a NelmApplier) Uninstall(ctx context.Context, s Spec) error {
 		ReleaseStorageDriver:        s.StorageDriver,
 		ReleaseStorageSQLConnection: s.StorageSQLConnection,
 	}
+	// Uninstall needs the connection just as much as install does: without it nelm
+	// falls back to its own default kubeconfig, so `down` would delete from a
+	// different cluster than the one `up` deployed to — and report success, since
+	// a release missing from that cluster reads as nothing to do.
+	applyKube(&opts.KubeConnectionOptions, s)
 	return action.ReleaseUninstall(ctx, s.Name, s.Namespace, opts)
 }
 
