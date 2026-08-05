@@ -73,5 +73,5 @@ func runDown(cmd *cobra.Command, g *globalOptions, o *downOptions) error {
 		includeNeeds: o.includeNeeds,
 		kubeContext:  g.kubeContext,
 		kubeConfig:   g.kubeConfig,
-	}, release.NelmApplier{}, opUninstall)
+	}, release.NelmApplier{LogLevel: g.logLevel}, opUninstall)
 }

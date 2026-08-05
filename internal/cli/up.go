@@ -92,7 +92,7 @@ func runUp(cmd *cobra.Command, g *globalOptions, o *upOptions) error {
 
 	// --dry-run plans instead of applying.
 	if o.dryRun {
-		return diffReleases(ctx, logger, p, opts, false, release.NelmApplier{})
+		return diffReleases(ctx, logger, p, opts, false, release.NelmApplier{LogLevel: g.logLevel})
 	}
-	return deploy(ctx, logger, p, opts, release.NelmApplier{}, opInstall)
+	return deploy(ctx, logger, p, opts, release.NelmApplier{LogLevel: g.logLevel}, opInstall)
 }

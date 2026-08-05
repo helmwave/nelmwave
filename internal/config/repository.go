@@ -22,8 +22,6 @@ type Repository struct {
 	// Username / Password are optional basic-auth credentials.
 	Username string `json:"username" yaml:"username,omitempty"`
 	Password string `json:"password" yaml:"password,omitempty"`
-	// ForceUpdate re-fetches the repo index even if cached (helm repos only).
-	ForceUpdate bool `json:"force_update" yaml:"force_update,omitempty"`
 	// InsecureSkipTLSVerify disables TLS verification for this repo.
 	InsecureSkipTLSVerify bool `json:"insecure_skip_tls_verify" yaml:"insecure_skip_tls_verify,omitempty"`
 	// PassCredentials forwards credentials to all domains, not just the repo host.

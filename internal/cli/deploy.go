@@ -108,6 +108,11 @@ func deploy(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deployOptio
 		if op == opInstall {
 			err = applier.Install(ctx, spec)
 		} else {
+			// The namespace is not the release's to own: whatever else lives
+			// there goes with it. Say so before it happens, not after.
+			if spec.DeleteNamespace {
+				l.Warn("namespace will be deleted with the release, including anything else in it")
+			}
 			err = applier.Uninstall(ctx, spec)
 		}
 		if err != nil {
@@ -416,6 +421,7 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 		SetJSON:              setJSON,
 		Timeout:              timeout,
 		CreateNamespace:      rel.Namespace.Create,
+		DeleteNamespace:      rel.Namespace.Delete,
 		NamespaceAnnotations: rel.Namespace.Annotations,
 		NamespaceLabels:      rel.Namespace.Labels,
 		AutoRollback:         rel.AutoRollback,

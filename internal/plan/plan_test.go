@@ -12,7 +12,7 @@ func TestFromConfig_AndRoundTrip(t *testing.T) {
 	cfg := &config.Config{
 		Project: "demo",
 		Repositories: map[string]config.Repository{
-			"bitnami": {URL: "https://charts.example.com", ForceUpdate: true},
+			"bitnami": {URL: "https://charts.example.com", PassCredentials: true},
 		},
 		Releases: map[string]config.Release{
 			"api@app": {
@@ -45,7 +45,7 @@ func TestFromConfig_AndRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(p, got) {
 		t.Errorf("round-trip mismatch:\n want %+v\n got  %+v", p, got)
 	}
-	if !got.Repositories["bitnami"].ForceUpdate {
-		t.Errorf("force_update lost across round-trip")
+	if !got.Repositories["bitnami"].PassCredentials {
+		t.Errorf("pass_credentials lost across round-trip")
 	}
 }

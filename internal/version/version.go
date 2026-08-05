@@ -1,8 +1,6 @@
 // Package version exposes build-time version information for the nelmwave binary.
 package version
 
-import "time"
-
 // These variables are overridden at build time via -ldflags, e.g.:
 //
 //	go build -ldflags "-X github.com/helmwave/nelmwave/internal/version.Version=v0.1.0"
@@ -12,15 +10,8 @@ var (
 	// Commit is the git commit the binary was built from.
 	Commit = "none"
 	// Date is the build date. When not set via -ldflags it falls back to today.
-	Date = ""
+	Date = "unknown"
 )
-
-// init defaults Date to today's date when it was not injected at build time.
-func init() {
-	if Date == "" || Date == "unknown" {
-		Date = time.Now().Format("2006-01-02")
-	}
-}
 
 // String returns a human-readable version line.
 func String() string {

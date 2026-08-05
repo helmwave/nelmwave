@@ -79,5 +79,5 @@ func runDiff(cmd *cobra.Command, g *globalOptions, o *diffOptions) error {
 		includeNeeds: o.includeNeeds,
 		kubeContext:  g.kubeContext,
 		kubeConfig:   g.kubeConfig,
-	}, o.detailedExitCode, release.NelmApplier{})
+	}, o.detailedExitCode, release.NelmApplier{LogLevel: g.logLevel})
 }

@@ -46,6 +46,11 @@ type Namespace struct {
 	// Create makes nelmwave ensure the namespace exists before applying
 	// (nelm's NoCreateNamespace = !Create).
 	Create bool `json:"create" yaml:"create" default:"true"`
+	// Delete removes the namespace after the release is uninstalled (nelm's
+	// DeleteReleaseNamespace). It is deliberately not the mirror of Create: the
+	// namespace is not owned by the release, so deleting it takes everything
+	// else living there with it. Off unless asked for.
+	Delete bool `json:"delete" yaml:"delete,omitempty"`
 	// Annotations are applied to the namespace itself. They are merged into
 	// whatever is already there; nelmwave never removes annotations it does not
 	// manage.

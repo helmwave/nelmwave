@@ -43,6 +43,9 @@ type Spec struct {
 	Timeout time.Duration
 	// CreateNamespace creates the namespace if missing (install only).
 	CreateNamespace bool
+	// DeleteNamespace deletes the namespace after the release is removed
+	// (uninstall only), along with anything else that happens to live in it.
+	DeleteNamespace bool
 	// NamespaceAnnotations / NamespaceLabels are merged onto the namespace object
 	// before the release is applied, so policy labels (pod-security,
 	// istio-injection) are in place by the time workloads land. Metadata not

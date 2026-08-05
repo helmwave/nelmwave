@@ -22,6 +22,7 @@ type fakeApplier struct {
 	uninstalled []string
 	planned     []string
 	sets        map[string][]string
+	deleteNS    map[string]bool
 	fail        map[string]error
 	changes     map[string]bool // release name -> has planned changes
 }
@@ -41,6 +42,10 @@ func (f *fakeApplier) Uninstall(_ context.Context, s release.Spec) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.uninstalled = append(f.uninstalled, s.Name)
+	if f.deleteNS == nil {
+		f.deleteNS = map[string]bool{}
+	}
+	f.deleteNS[s.Name] = s.DeleteNamespace
 	return f.fail[s.Name]
 }
 
@@ -271,6 +276,65 @@ func TestSetJSONArgs_NestedMapsAndTypes(t *testing.T) {
 		if args[i] != want[i] {
 			t.Errorf("arg[%d] = %q, want %q", i, args[i], want[i])
 		}
+	}
+}
+
+func TestDeploy_NamespaceDeleteReachesTheApplierAndWarns(t *testing.T) {
+	p := &plan.Plan{
+		Releases: map[string]plan.Release{
+			"a@ns": {
+				Labels:    map[string]string{"app": "a"},
+				Chart:     config.Chart{Name: "r/a"},
+				Namespace: config.Namespace{Create: true, Delete: true},
+			},
+			"b@ns": {
+				Labels:    map[string]string{"app": "b"},
+				Chart:     config.Chart{Name: "r/b"},
+				Namespace: config.Namespace{Create: true},
+			},
+		},
+	}
+
+	core, logs := observer.New(zap.InfoLevel)
+	f := &fakeApplier{}
+	if err := deploy(context.Background(), zap.New(core), p, opts("", false), f, opUninstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	if !f.deleteNS["a"] {
+		t.Error("namespace.delete did not reach the applier")
+	}
+	if f.deleteNS["b"] {
+		t.Error("release without namespace.delete must not delete its namespace")
+	}
+
+	// Deleting a namespace takes unrelated tenants with it, so it must be
+	// announced at warn level, once, and only for the release that asked.
+	warns := logs.FilterLevelExact(zap.WarnLevel).All()
+	if len(warns) != 1 {
+		t.Fatalf("want exactly one warning, got %d: %v", len(warns), warns)
+	}
+	if got := warns[0].ContextMap()["release"]; got != "a@ns" {
+		t.Errorf("warning is about %v, want a@ns", got)
+	}
+}
+
+func TestDeploy_NamespaceDeleteIsIgnoredOnInstall(t *testing.T) {
+	p := &plan.Plan{
+		Releases: map[string]plan.Release{
+			"a@ns": {
+				Chart:     config.Chart{Name: "r/a"},
+				Namespace: config.Namespace{Create: true, Delete: true},
+			},
+		},
+	}
+
+	core, logs := observer.New(zap.InfoLevel)
+	f := &fakeApplier{}
+	if err := deploy(context.Background(), zap.New(core), p, opts("", false), f, opInstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	if n := logs.FilterLevelExact(zap.WarnLevel).Len(); n != 0 {
+		t.Errorf("up must not warn about namespace deletion, got %d warnings", n)
 	}
 }
 

@@ -109,7 +109,6 @@ registry. A value is either a bare URL string or an object:
 |---|---|
 | `url` | Repository index URL or OCI registry URL. Required. |
 | `username`, `password` | Basic-auth credentials. |
-| `force_update` | Re-fetch the repo index even if cached (helm repos). |
 | `insecure_skip_tls_verify` | Disable TLS verification for this repo. |
 | `pass_credentials` | Forward credentials to all domains, not just the repo host. |
 | `ca_file` | Path to a CA bundle for this repo. |
@@ -322,11 +321,18 @@ releases:
 | Field | Default | Meaning |
 |---|---|---|
 | `create` | `true` | Ensure the namespace exists before applying. |
+| `delete` | `false` | Delete the namespace after `down` removes the release. |
 | `labels` | none | Labels merged onto the namespace object. |
 | `annotations` | none | Annotations merged onto the namespace object. |
 
 Labels and annotations **merge**: keys nelmwave does not declare are left alone,
 so it coexists with whatever else manages that namespace.
+
+`delete` is not the mirror of `create`, which is why it defaults to `false`
+while `create` defaults to `true`. The namespace is not owned by the release:
+deleting it removes everything else living there — other releases, secrets,
+PVCs — not just what nelmwave put in. `down` logs a warning for every release
+that carries it, before uninstalling.
 
 They are applied **before** the release, not after — a policy label such as
 `istio-injection` or `pod-security.kubernetes.io/enforce` only affects workloads

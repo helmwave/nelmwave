@@ -11,7 +11,7 @@ project: demo
 repositories:
   bitnami:
     url: https://charts.bitnami.com/bitnami
-    force_update: true
+    pass_credentials: true
 releases:
   cache@app:
     chart:
@@ -24,8 +24,8 @@ releases:
 	}
 
 	repo, ok := cfg.Repositories["bitnami"]
-	if !ok || !repo.ForceUpdate {
-		t.Errorf("force_update should bind to true via json tag, got %+v", cfg.Repositories)
+	if !ok || !repo.PassCredentials {
+		t.Errorf("pass_credentials should bind to true via json tag, got %+v", cfg.Repositories)
 	}
 	r, ok := cfg.Releases["cache@app"]
 	if !ok {
@@ -349,6 +349,9 @@ releases:
 	ns := cfg.Releases["api@prod"].Namespace
 	if ns.Create {
 		t.Error("namespace.create: explicit false must survive the default:\"true\" tag")
+	}
+	if ns.Delete {
+		t.Error("namespace.delete must default to false — it is not the mirror of create")
 	}
 	if ns.Labels["pod-security.kubernetes.io/enforce"] != "restricted" {
 		t.Errorf("namespace labels = %v", ns.Labels)
