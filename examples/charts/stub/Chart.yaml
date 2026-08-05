@@ -1,0 +1,5 @@
+apiVersion: v2
+name: stub
+description: Placeholder chart shared by the examples, so they build without a registry.
+type: application
+version: 0.1.0
