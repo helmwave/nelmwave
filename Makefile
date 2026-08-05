@@ -34,7 +34,7 @@ LDFLAGS := -X $(VERSION_PKG).Version=$(VERSION) \
            -X $(VERSION_PKG).Commit=$(COMMIT) \
            -X $(VERSION_PKG).Date=$(DATE)
 
-.PHONY: build test lint examples e2e e2e-up e2e-test e2e-down version
+.PHONY: build test lint examples e2e e2e-up e2e-test e2e-down version demo
 
 build:
 	go build -ldflags '$(LDFLAGS)' ./cmd/nelmwave
@@ -60,6 +60,15 @@ examples: build
 		( cd "$$dir" && ENV=stg SOPS_AGE_KEY_FILE=age.key \
 			$(CURDIR)/nelmwave build --log-level warn ); \
 	done
+
+## demo: re-record demo/nelmwave.cast (needs asciinema, bat, tree and kubectl).
+## Runs the full build/diff/up/down loop against the e2e fixture, so bring it up
+## first: `make e2e-up`. demo.sh refuses to record against a non-local cluster.
+demo: build
+	TERM=xterm-256color asciinema rec demo/nelmwave.cast --overwrite \
+		--window-size 100x36 --idle-time-limit 2 \
+		-t 'nelmwave — declarative release orchestrator on top of nelm' \
+		-c 'bash demo/demo.sh'
 
 ## e2e: bring the cluster up, run the suite, tear it down (even on failure).
 e2e:
