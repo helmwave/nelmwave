@@ -18,6 +18,9 @@ coverage.txt
 .idea/
 .vscode/
 
-# graphify: knowledge graph output + hooks with machine-local paths
+# graphify: the knowledge graph is a local, regenerable artifact — every
+# contributor builds their own (`graphify update .`, AST-only, no API key).
+# .claude/settings.json is tracked and machine-independent; keep personal
+# overrides in .claude/settings.local.json.
 graphify-out/
-.claude/settings.json
+.claude/settings.local.json
