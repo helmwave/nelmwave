@@ -46,6 +46,6 @@ func TestFromConfig_AndRoundTrip(t *testing.T) {
 		t.Errorf("round-trip mismatch:\n want %+v\n got  %+v", p, got)
 	}
 	if !got.Repositories["bitnami"].PassCredentials {
-		t.Errorf("pass_credentials lost across round-trip")
+		t.Errorf("passCredentials lost across round-trip")
 	}
 }

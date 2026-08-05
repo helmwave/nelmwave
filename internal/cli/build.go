@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -101,6 +102,8 @@ func buildPlan(ctx context.Context, manifest, output string, logger *zap.Logger)
 		return fmt.Errorf("invalid manifest %q: %d problem(s), see the log above", manifest, n)
 	}
 
+	warnEmbeddedDriverPasswords(logger, cfg)
+
 	p := plan.FromConfig(cfg)
 
 	// Resolve values/store datasources relative to the manifest directory.
@@ -117,6 +120,31 @@ func buildPlan(ctx context.Context, manifest, output string, logger *zap.Logger)
 		zap.Int("releases", len(p.Releases)),
 	)
 	return nil
+}
+
+// warnEmbeddedDriverPasswords points out a driverURL carrying its password
+// inline. It is not an error — it works — but build writes the manifest into
+// the planfile, so the password ends up in cleartext on disk and in whatever CI
+// keeps as an artifact. libpq reads PGPASSWORD, which keeps it out of both.
+func warnEmbeddedDriverPasswords(logger *zap.Logger, cfg *config.Config) {
+	for _, key := range sortedReleaseKeys(cfg) {
+		d, err := config.ParseDriverURL(cfg.Releases[key].DriverURL)
+		if err == nil && d.HasPassword {
+			logger.Warn("driverURL embeds a password; it will be written to the planfile in cleartext "+
+				"(pass it via PGPASSWORD instead)",
+				zap.String("release", key))
+		}
+	}
+}
+
+// sortedReleaseKeys returns the release keys in deterministic order.
+func sortedReleaseKeys(cfg *config.Config) []string {
+	keys := make([]string, 0, len(cfg.Releases))
+	for k := range cfg.Releases {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // logValidationProblems logs every problem carried by a joined validation error

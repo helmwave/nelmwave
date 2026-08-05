@@ -4,8 +4,18 @@ package config
 // namespace and kube-context — lives entirely in the Config.Releases map key
 // (see Uniqname), so the struct carries none of those fields.
 type Release struct {
-	// Labels are used for k8s-style selection (-l) and are free-form.
+	// Labels are used for k8s-style selection (-l) and are free-form. They also
+	// end up on the release storage object (see release.Spec.Labels).
 	Labels map[string]string `json:"labels" yaml:"labels"`
+	// Annotations are stored with each revision of the release (nelm's
+	// ReleaseInfoAnnotations) and read back via `nelm release get`. Unlike
+	// Labels they cannot be selected on, and unlike Kubernetes annotations they
+	// are not attached to any object — so pipeline URLs, commit messages and
+	// other things too long or too punctuated to be a label fit here.
+	//
+	// These describe the release, not its resources: annotations for every
+	// rendered resource are a separate concern (nelm's ExtraAnnotations).
+	Annotations map[string]string `json:"annotations" yaml:"annotations,omitempty"`
 	// Needs declares the releases that must be applied before this one (DAG
 	// edges), by explicit uniqname and/or by label selector.
 	Needs Needs `json:"needs" yaml:"needs,omitempty"`
@@ -53,6 +63,13 @@ type Release struct {
 	// HistoryLimit caps how many revisions of this release are kept in storage.
 	// 0 leaves nelm's default of 10.
 	HistoryLimit int `json:"historyLimit" yaml:"historyLimit,omitempty"`
+	// DriverURL says where the release's state is kept, as a URL:
+	// kubernetes://secrets (the default), kubernetes://configmaps, or
+	// psql://user@host/db. See ParseDriverURL.
+	//
+	// Usually set once in the top-level Release: block — a manifest whose
+	// releases keep state in different places is a good way to lose one.
+	DriverURL string `json:"driverURL" yaml:"driverURL,omitempty"`
 }
 
 // DeletePropagations are the values DeletePropagation accepts. They are

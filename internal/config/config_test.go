@@ -11,7 +11,7 @@ project: demo
 repositories:
   bitnami:
     url: https://charts.bitnami.com/bitnami
-    pass_credentials: true
+    passCredentials: true
 releases:
   cache@app:
     chart:
@@ -25,7 +25,7 @@ releases:
 
 	repo, ok := cfg.Repositories["bitnami"]
 	if !ok || !repo.PassCredentials {
-		t.Errorf("pass_credentials should bind to true via json tag, got %+v", cfg.Repositories)
+		t.Errorf("passCredentials should bind to true via json tag, got %+v", cfg.Repositories)
 	}
 	r, ok := cfg.Releases["cache@app"]
 	if !ok {
@@ -90,13 +90,13 @@ func TestValidate_ProvenanceStrategy(t *testing.T) {
 repositories:
   bad:
     url: https://charts.example.com
-    provenance_strategy: alwais
+    provenanceStrategy: alwais
 releases:
   a: { chart: { name: bad/a } }
 `)
 	err := Validate(cfg)
-	if err == nil || !strings.Contains(err.Error(), "unknown provenance_strategy") {
-		t.Fatalf("expected provenance_strategy error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unknown provenanceStrategy") {
+		t.Fatalf("expected provenanceStrategy error, got: %v", err)
 	}
 
 	for _, s := range append([]string{""}, ProvenanceStrategies...) {
@@ -104,7 +104,7 @@ releases:
 repositories:
   ok:
     url: https://charts.example.com
-    provenance_strategy: `+s+`
+    provenanceStrategy: `+s+`
 releases:
   a: { chart: { name: ok/a } }
 `)
@@ -174,52 +174,24 @@ releases:
 	}
 }
 
-// On a helm repository the scheme is already in the url, so oci_plain_http there
-// would do nothing at all — nelm reads it only on the OCI path.
-func TestValidate_OCIPlainHTTPIsOCIOnly(t *testing.T) {
-	cfg := mustParseValid(t, `
-repositories:
-  helm:
-    url: https://charts.example.com
-    oci_plain_http: true
-releases:
-  a: { chart: { name: helm/a } }
-`)
-	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "oci_plain_http only applies to oci://") {
-		t.Fatalf("expected oci_plain_http error, got: %v", err)
-	}
-
-	ok := mustParseValid(t, `
-repositories:
-  reg:
-    url: oci://registry:5000
-    oci_plain_http: true
-releases:
-  a: { chart: { name: "oci://registry:5000/a" } }
-`)
-	if err := Validate(ok); err != nil {
-		t.Errorf("oci_plain_http on an OCI registry should be accepted, got %v", err)
-	}
-}
-
 func TestValidate_RepositoryRequestTimeout(t *testing.T) {
 	cfg := mustParseValid(t, `
 repositories:
   bad:
     url: https://charts.example.com
-    request_timeout: 30 seconds
+    requestTimeout: 30 seconds
 releases:
   a: { chart: { name: bad/a } }
 `)
-	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid request_timeout") {
-		t.Fatalf("expected request_timeout error, got: %v", err)
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid requestTimeout") {
+		t.Fatalf("expected requestTimeout error, got: %v", err)
 	}
 
 	ok := mustParseValid(t, `
 repositories:
   ok:
     url: https://charts.example.com
-    request_timeout: 30s
+    requestTimeout: 30s
 releases:
   a: { chart: { name: ok/a } }
 `)
@@ -445,11 +417,14 @@ Release:
   labels:
     common: true
     team: platform
+  annotations:
+    ci/pipeline: 48211
   values:
     - common.yml
 releases:
   a@ns:
     labels: { app: a, team: apps }
+    annotations: { ci/commit: 9f2c1ab }
     values: [ own.yml ]
     chart: { name: r/a }
   b@ns:
@@ -469,6 +444,18 @@ releases:
 	b := cfg.Releases["b@ns"].Labels
 	if b["common"] != "true" || b["team"] != "platform" {
 		t.Errorf("release without own labels should inherit defaults, got %v", b)
+	}
+
+	// Annotations behave like labels: a map, so it deep-merges.
+	if got := cfg.Releases["a@ns"].Annotations["ci/pipeline"]; got != "48211" {
+		t.Errorf("numeric annotation should coerce to string, got %q", got)
+	}
+	if got := cfg.Releases["a@ns"].Annotations["ci/commit"]; got != "9f2c1ab" {
+		t.Errorf("per-release annotation lost, got %v", cfg.Releases["a@ns"].Annotations)
+	}
+	if got := cfg.Releases["b@ns"].Annotations["ci/pipeline"]; got != "48211" {
+		t.Errorf("release without own annotations should inherit defaults, got %v",
+			cfg.Releases["b@ns"].Annotations)
 	}
 
 	// Values are a slice default: replaced by a release's own, used when absent.

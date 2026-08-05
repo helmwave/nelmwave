@@ -29,14 +29,9 @@ func Validate(cfg *Config) error {
 		if err := validateProvenanceStrategy(name, repo); err != nil {
 			errs = append(errs, err)
 		}
-		if repo.OCIPlainHTTP && !repo.IsOCI() {
-			errs = append(errs, fmt.Errorf(
-				"repository %q: oci_plain_http only applies to oci:// registries; "+
-					"for a helm repository write the scheme in the url instead (http://...)", name))
-		}
 		if repo.RequestTimeout != "" {
 			if _, err := time.ParseDuration(repo.RequestTimeout); err != nil {
-				errs = append(errs, fmt.Errorf("repository %q: invalid request_timeout %q: %w",
+				errs = append(errs, fmt.Errorf("repository %q: invalid requestTimeout %q: %w",
 					name, repo.RequestTimeout, err))
 			}
 		}
@@ -52,6 +47,10 @@ func Validate(cfg *Config) error {
 		}
 		if err := validateDeletePropagation(key, r); err != nil {
 			errs = append(errs, err)
+		}
+		// Not just a typo guard: nelm panics on a driver name it does not know.
+		if _, err := ParseDriverURL(r.DriverURL); err != nil {
+			errs = append(errs, fmt.Errorf("release %q: %w", key, err))
 		}
 		errs = append(errs, validateNeeds(cfg, key, r)...)
 	}
@@ -111,7 +110,7 @@ func validateProvenanceStrategy(name string, r Repository) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("repository %q: unknown provenance_strategy %q (want one of %s)",
+	return fmt.Errorf("repository %q: unknown provenanceStrategy %q (want one of %s)",
 		name, r.ProvenanceStrategy, strings.Join(ProvenanceStrategies, ", "))
 }
 

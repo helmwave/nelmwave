@@ -95,7 +95,7 @@ func runDiff(cmd *cobra.Command, g *globalOptions, o *diffOptions) error {
 		concurrency:  o.concurrency,
 		includeNeeds: o.includeNeeds,
 		kubeContext:  g.kubeContext,
-		kubeConfig:   g.kubeConfig,
+		kube:         g.kube.connection(),
 		diff: release.DiffOptions{
 			ShowVerbose:       !o.noVerbose,
 			ShowVerboseCRD:    o.verboseCRD,

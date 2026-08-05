@@ -83,14 +83,15 @@ func (c *Config) canonicalizeUniqnames() error {
 }
 
 // normalizeLabels walks the whole config tree and coerces the values of every
-// "labels"/"matchLabels" map to strings, so bare YAML scalars (true, 3, ...) are
-// accepted where Kubernetes wants string labels. Walking recursively covers
-// per-release labels, needs.matchLabels, and the "Release:" type-default block.
+// "labels"/"matchLabels"/"annotations" map to strings, so bare YAML scalars
+// (true, 3, ...) are accepted where a string map is wanted. Walking recursively
+// covers per-release labels and annotations, namespace metadata,
+// needs.matchLabels, and the "Release:"/"Namespace:" type-default blocks.
 func normalizeLabels(node any) {
 	switch n := node.(type) {
 	case map[string]any:
 		for k, v := range n {
-			if k == "labels" || k == "matchLabels" {
+			if k == "labels" || k == "matchLabels" || k == "annotations" {
 				stringifyValues(v)
 			}
 			normalizeLabels(v)

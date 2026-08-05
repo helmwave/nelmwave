@@ -47,7 +47,7 @@ func (c *ChartResolution) transport(r config.Repository) {
 	c.CAFile = r.CAFile
 	c.CertFile = r.CertFile
 	c.KeyFile = r.KeyFile
-	c.OCIPlainHTTP = r.OCIPlainHTTP
+	c.OCIPlainHTTP = c.OCIPlainHTTP || r.IsOCIPlainHTTP()
 	c.SkipUpdate = r.SkipUpdate
 	c.RequestTimeout = r.RequestTimeout
 	c.ProvenanceStrategy = r.ProvenanceStrategy
@@ -55,16 +55,22 @@ func (c *ChartResolution) transport(r config.Repository) {
 }
 
 // Resolve maps chartName plus the declared repositories to a ChartResolution:
-//   - oci://host/... -> OCI (Ref = full URL); the registry is found by URL
-//     prefix and contributes its transport settings. Credentials are the
-//     exception: they reach nelm through a Docker config.json (see DockerConfig).
+//   - oci://host/... or oci+http://host/... -> OCI. Ref is normalized to oci://
+//     (nelm knows no other scheme) and OCIPlainHTTP records which one it was.
+//     The registry is found by address, ignoring the scheme, and contributes its
+//     transport settings — credentials excepted, they reach nelm through a
+//     Docker config.json (see DockerConfig).
 //   - alias/chart, where alias is a declared helm repo -> Ref = chart name,
 //     RepoURL + auth + transport from that repository.
 //   - anything else -> passed through unchanged (local path or bare name).
 func Resolve(chartName string, repos map[string]config.Repository) ChartResolution {
 	res := ChartResolution{Ref: chartName}
-	if strings.HasPrefix(chartName, "oci://") {
-		if r, found := matchOCI(chartName, repos); found {
+	if addr, ok := ociAddress(chartName); ok {
+		// nelm and helm accept only oci://, so the plain-HTTP spelling is
+		// rewritten and carried as a flag instead.
+		res.Ref = config.OCIScheme + addr
+		res.OCIPlainHTTP = strings.HasPrefix(chartName, config.OCIPlainHTTPScheme)
+		if r, found := matchOCI(addr, repos); found {
 			res.transport(r)
 		}
 		return res
@@ -83,29 +89,44 @@ func Resolve(chartName string, repos map[string]config.Repository) ChartResoluti
 	return res
 }
 
-// matchOCI finds the declared OCI repository an oci:// chart reference belongs
-// to. An OCI chart is addressed by its full URL rather than by an alias, so the
-// repository is found by URL prefix. The longest match wins, so a repository
-// declared as oci://ghcr.io/acme beats a broader oci://ghcr.io; ties are broken
-// by name, since map iteration order is not stable.
-func matchOCI(chartName string, repos map[string]config.Repository) (config.Repository, bool) {
+// ociAddress strips an OCI scheme, returning the bare host/path and whether the
+// reference was an OCI one at all. Comparing addresses rather than whole URLs
+// lets a chart written as oci:// match a registry declared as oci+http:// — the
+// scheme is transport, not identity.
+func ociAddress(ref string) (string, bool) {
+	if rest, ok := strings.CutPrefix(ref, config.OCIScheme); ok {
+		return rest, true
+	}
+	if rest, ok := strings.CutPrefix(ref, config.OCIPlainHTTPScheme); ok {
+		return rest, true
+	}
+	return "", false
+}
+
+// matchOCI finds the declared OCI registry a chart address belongs to. An OCI
+// chart is addressed by its URL rather than by an alias, so the registry is
+// found by address prefix. The longest match wins, so a registry declared as
+// oci://ghcr.io/acme beats a broader oci://ghcr.io; ties are broken by name,
+// since map iteration order is not stable.
+func matchOCI(addr string, repos map[string]config.Repository) (config.Repository, bool) {
 	var best config.Repository
 	var bestName string
-	found := false
+	bestLen := -1
 	for name, r := range repos {
-		if !r.IsOCI() {
+		repoAddr, ok := ociAddress(r.URL)
+		if !ok {
 			continue
 		}
-		prefix := strings.TrimSuffix(r.URL, "/")
-		if chartName != prefix && !strings.HasPrefix(chartName, prefix+"/") {
+		prefix := strings.TrimSuffix(repoAddr, "/")
+		if addr != prefix && !strings.HasPrefix(addr, prefix+"/") {
 			continue
 		}
 		switch {
-		case !found, len(prefix) > len(strings.TrimSuffix(best.URL, "/")):
-			best, bestName, found = r, name, true
-		case len(prefix) == len(strings.TrimSuffix(best.URL, "/")) && name < bestName:
+		case len(prefix) > bestLen:
+			best, bestName, bestLen = r, name, len(prefix)
+		case len(prefix) == bestLen && name < bestName:
 			best, bestName = r, name
 		}
 	}
-	return best, found
+	return best, bestLen >= 0
 }

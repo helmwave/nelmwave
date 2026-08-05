@@ -55,10 +55,10 @@ func DockerConfig(repos map[string]config.Repository) (string, func(), error) {
 	return f.Name(), cleanup, nil
 }
 
-// ociHost extracts the registry host from an oci:// URL (the part Docker config
-// auths are keyed by), dropping the scheme and any path.
+// ociHost extracts the registry host from an oci:// or oci+http:// URL (the part
+// Docker config auths are keyed by), dropping the scheme and any path.
 func ociHost(url string) string {
-	host := strings.TrimPrefix(url, "oci://")
+	host := strings.TrimPrefix(strings.TrimPrefix(url, config.OCIPlainHTTPScheme), config.OCIScheme)
 	if i := strings.IndexByte(host, '/'); i >= 0 {
 		host = host[:i]
 	}

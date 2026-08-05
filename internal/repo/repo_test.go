@@ -48,7 +48,6 @@ func TestResolve_TransportSettings(t *testing.T) {
 		CAFile:                "/tls/ca.pem",
 		CertFile:              "/tls/client.pem",
 		KeyFile:               "/tls/client-key.pem",
-		OCIPlainHTTP:          true,
 		SkipUpdate:            true,
 		RequestTimeout:        "30s",
 	}
@@ -56,7 +55,7 @@ func TestResolve_TransportSettings(t *testing.T) {
 	check := func(t *testing.T, what string, r ChartResolution) {
 		t.Helper()
 		if !r.SkipTLSVerify || r.CAFile != "/tls/ca.pem" || r.CertFile != "/tls/client.pem" ||
-			r.KeyFile != "/tls/client-key.pem" || !r.OCIPlainHTTP || !r.SkipUpdate || r.RequestTimeout != "30s" {
+			r.KeyFile != "/tls/client-key.pem" || !r.SkipUpdate || r.RequestTimeout != "30s" {
 			t.Errorf("%s: transport settings lost: %+v", what, r)
 		}
 	}
@@ -68,6 +67,38 @@ func TestResolve_TransportSettings(t *testing.T) {
 	oci := full
 	oci.URL = "oci://registry.example.com"
 	check(t, "oci registry", Resolve("oci://registry.example.com/api", map[string]config.Repository{"reg": oci}))
+}
+
+// The registry's transport is part of its address: oci+http:// means no TLS.
+// nelm only understands oci://, so the ref is rewritten and the choice travels
+// as a flag.
+func TestResolve_OCIPlainHTTPFromScheme(t *testing.T) {
+	rs := map[string]config.Repository{
+		"dev":  {URL: "oci+http://registry:5000"},
+		"prod": {URL: "oci://registry.example.com"},
+	}
+
+	// Declared plain-HTTP registry, chart written either way.
+	for _, chart := range []string{"oci+http://registry:5000/api", "oci://registry:5000/api"} {
+		got := Resolve(chart, rs)
+		if !got.OCIPlainHTTP {
+			t.Errorf("%s: plain HTTP not detected: %+v", chart, got)
+		}
+		if got.Ref != "oci://registry:5000/api" {
+			t.Errorf("%s: ref = %q, want the oci:// spelling nelm accepts", chart, got.Ref)
+		}
+	}
+
+	// A TLS registry stays TLS.
+	if got := Resolve("oci://registry.example.com/api", rs); got.OCIPlainHTTP {
+		t.Errorf("oci:// registry must not be plain HTTP: %+v", got)
+	}
+
+	// An undeclared registry addressed as oci+http:// is still plain HTTP: the
+	// chart reference alone is enough to say so.
+	if got := Resolve("oci+http://localhost:5000/api", rs); !got.OCIPlainHTTP {
+		t.Errorf("undeclared oci+http:// chart must be plain HTTP: %+v", got)
+	}
 }
 
 // Basic auth is a helm-repo concept here: for OCI the credentials travel in a

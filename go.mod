@@ -7,10 +7,12 @@ require (
 	github.com/hairyhenderson/gomplate/v5 v5.2.0
 	github.com/helmwave/confijer v0.0.0-20260804153433-bcaead09d8ba
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/werf/nelm v1.28.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
+	k8s.io/api v0.29.3
 	k8s.io/apimachinery v0.29.3
 	k8s.io/client-go v0.36.2
 )
@@ -259,7 +261,6 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect
 	github.com/tidwall/gjson v1.17.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
@@ -316,7 +317,6 @@ require (
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	k8s.io/api v0.29.3 // indirect
 	k8s.io/apiextensions-apiserver v0.29.0 // indirect
 	k8s.io/apiserver v0.29.2 // indirect
 	k8s.io/cli-runtime v0.29.3 // indirect
@@ -353,3 +353,9 @@ replace k8s.io/apiserver => k8s.io/apiserver v0.29.2
 // sops pulls docker/cli forward to v29, whose types.AuthConfig moved; oras-go
 // (via nelm's OCI support) still expects the v25 API. Pin it back, as with k8s.io.
 replace github.com/docker/cli => github.com/docker/cli v25.0.5+incompatible
+
+// client-go 0.29's clientcmd merges kubeconfig files through mergo, and relies
+// on the pre-0.3.9 "first value wins" behaviour. nelm/kubedog pull mergo forward
+// to v0.3.16, which reverses that: with several --kube-config files the last
+// one's cluster would win, unlike kubectl. Pin it back, as with k8s.io.
+replace github.com/imdario/mergo => github.com/imdario/mergo v0.3.6

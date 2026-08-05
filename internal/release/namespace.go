@@ -8,7 +8,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 // applyNamespaceMetadata makes sure the release namespace carries the declared
@@ -101,20 +100,12 @@ func metadataUnchanged(ns *corev1.Namespace, s Spec) bool {
 	return true
 }
 
-// kubeClient builds a clientset from the spec's kubeconfig and context, matching
-// what nelm resolves for the same release.
+// kubeClient builds a clientset for the spec's connection, resolved the same way
+// nelm resolves its own (see KubeConnection.RESTConfig).
 func kubeClient(s Spec) (*kubernetes.Clientset, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if s.KubeConfig != "" {
-		rules.ExplicitPath = s.KubeConfig
-	}
-	overrides := &clientcmd.ConfigOverrides{}
-	if s.KubeContext != "" {
-		overrides.CurrentContext = s.KubeContext
-	}
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+	cfg, err := s.Kube.RESTConfig(s.KubeContext)
 	if err != nil {
-		return nil, fmt.Errorf("build kube client config: %w", err)
+		return nil, err
 	}
 	clients, err := kubernetes.NewForConfig(cfg)
 	if err != nil {

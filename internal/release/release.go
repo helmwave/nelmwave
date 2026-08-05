@@ -14,8 +14,9 @@ type Spec struct {
 	Name        string
 	Namespace   string
 	KubeContext string
-	// KubeConfig is an optional kubeconfig path; empty uses nelm's default.
-	KubeConfig string
+	// Kube is how to reach the cluster — a kubeconfig, or the connection spelled
+	// out directly. Shared by every release of a run; only KubeContext varies.
+	Kube KubeConnection
 
 	// Chart is the resolved chart reference (chart name for a helm repo, oci://
 	// URL for OCI, or a local path), ChartVersion its version.
@@ -69,6 +70,16 @@ type Spec struct {
 	// AutoRollback rolls back to the last deployed revision on failure (install only).
 	AutoRollback bool
 
+	// Labels are the release's manifest labels. Besides selection they are put
+	// on the release storage object (Secret/ConfigMap), so a release can be
+	// found in the cluster by the same labels it is selected by. Helm's own
+	// name/owner/status/version are applied after these and win on collision.
+	Labels map[string]string
+	// Annotations are stored inside each revision of the release (nelm's
+	// ReleaseInfoAnnotations), not on any Kubernetes object, so they cannot be
+	// selected on — they are read back with `nelm release get`.
+	Annotations map[string]string
+
 	// ForceAdoption takes over resources claimed by another Helm release.
 	ForceAdoption bool
 	// RemoveManualChanges reclaims manually added fields (nelm's
@@ -82,6 +93,10 @@ type Spec struct {
 	DeletePropagation string
 	// HistoryLimit caps stored revisions (0 = nelm's default of 10).
 	HistoryLimit int
+	// StorageDriver / StorageSQLConnection say where the release's state lives,
+	// resolved from the manifest's driverURL. Empty driver = nelm's default.
+	StorageDriver        string
+	StorageSQLConnection string
 }
 
 // DiffOptions control how planned changes are rendered. They describe the

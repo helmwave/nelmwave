@@ -40,6 +40,12 @@ func applyRuntime(o *common.ReleaseInstallRuntimeOptions, s Spec) {
 	o.NoInstallStandaloneCRDs = !s.InstallCRDs
 	o.DefaultDeletePropagation = s.DeletePropagation
 	o.ReleaseHistoryLimit = s.HistoryLimit
+	// The manifest's labels double as the storage object's labels. Safe against
+	// collisions: helm writes name/owner/status/version after these.
+	o.ReleaseLabels = s.Labels
+	o.ReleaseInfoAnnotations = s.Annotations
+	o.ReleaseStorageDriver = s.StorageDriver
+	o.ReleaseStorageSQLConnection = s.StorageSQLConnection
 }
 
 // NelmApplier is the production Applier backed by github.com/werf/nelm.
@@ -95,8 +101,7 @@ func (a NelmApplier) Install(ctx context.Context, s Spec) error {
 	}
 	opts.ValuesFiles = s.ValuesFiles
 	opts.ValuesSetJSON = s.SetJSON
-	opts.KubeConfigPaths = kubeConfigPaths(s.KubeConfig)
-	opts.KubeContextCurrent = s.KubeContext
+	applyKube(&opts.KubeConnectionOptions, s)
 	applyRepo(&opts.ChartRepoConnectionOptions, s)
 	applyRuntime(&opts.ReleaseInstallRuntimeOptions, s)
 	return action.ReleaseInstall(ctx, s.Name, s.Namespace, opts)
@@ -111,12 +116,12 @@ func (a NelmApplier) Uninstall(ctx context.Context, s Spec) error {
 		// Uninstall keeps these as plain fields rather than embedding the
 		// runtime options, so applyRuntime does not fit here. ForceAdoption and
 		// CRD installation have no meaning when removing a release.
-		NoRemoveManualChanges:    !s.RemoveManualChanges,
-		DefaultDeletePropagation: s.DeletePropagation,
-		ReleaseHistoryLimit:      s.HistoryLimit,
+		NoRemoveManualChanges:       !s.RemoveManualChanges,
+		DefaultDeletePropagation:    s.DeletePropagation,
+		ReleaseHistoryLimit:         s.HistoryLimit,
+		ReleaseStorageDriver:        s.StorageDriver,
+		ReleaseStorageSQLConnection: s.StorageSQLConnection,
 	}
-	opts.KubeConfigPaths = kubeConfigPaths(s.KubeConfig)
-	opts.KubeContextCurrent = s.KubeContext
 	return action.ReleaseUninstall(ctx, s.Name, s.Namespace, opts)
 }
 
@@ -137,8 +142,7 @@ func (a NelmApplier) Plan(ctx context.Context, s Spec, o PlanOptions) (bool, err
 	}
 	opts.ValuesFiles = s.ValuesFiles
 	opts.ValuesSetJSON = s.SetJSON
-	opts.KubeConfigPaths = kubeConfigPaths(s.KubeConfig)
-	opts.KubeContextCurrent = s.KubeContext
+	applyKube(&opts.KubeConnectionOptions, s)
 	applyRepo(&opts.ChartRepoConnectionOptions, s)
 	applyRuntime(&opts.ReleaseInstallRuntimeOptions, s)
 	applyDiff(&opts.ResourceDiffOptions, o.Diff)
@@ -166,13 +170,4 @@ func changesPlanned(err error) bool {
 	return errors.Is(err, action.ErrChangesPlanned) ||
 		errors.Is(err, action.ErrResourceChangesPlanned) ||
 		errors.Is(err, action.ErrReleaseInstallPlanned)
-}
-
-// kubeConfigPaths turns an optional kubeconfig path into nelm's slice form;
-// nil lets nelm fall back to its default (~/.kube/config or in-cluster).
-func kubeConfigPaths(path string) []string {
-	if path == "" {
-		return nil
-	}
-	return []string{path}
 }

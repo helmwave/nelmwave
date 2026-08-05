@@ -72,6 +72,6 @@ func runDown(cmd *cobra.Command, g *globalOptions, o *downOptions) error {
 		concurrency:  o.concurrency,
 		includeNeeds: o.includeNeeds,
 		kubeContext:  g.kubeContext,
-		kubeConfig:   g.kubeConfig,
+		kube:         g.kube.connection(),
 	}, release.NelmApplier{LogLevel: g.logLevel}, opUninstall)
 }

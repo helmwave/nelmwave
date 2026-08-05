@@ -21,7 +21,9 @@ type globalOptions struct {
 	logLevel    string
 	logFormat   string
 	kubeContext string
-	kubeConfig  string
+	// kube holds the rest of the cluster-connection flags; kubeContext stays
+	// separate because a release's uniqname can override it.
+	kube kubeOptions
 
 	logger *zap.Logger
 }
@@ -90,7 +92,7 @@ plan that build wrote, so what you reviewed is what gets applied.`,
 	flags.StringVar(&opts.logLevel, "log-level", "info", "log level: debug|info|warn|error")
 	flags.StringVar(&opts.logFormat, "log-format", "auto", "log format: auto|console|json")
 	flags.StringVar(&opts.kubeContext, "kube-context", "", "name of the kubeconfig context to use")
-	flags.StringVar(&opts.kubeConfig, "kube-config", "", "path to the kubeconfig file")
+	opts.kube.register(flags)
 
 	cmd.AddCommand(
 		newBuildCommand(opts),
@@ -98,6 +100,10 @@ plan that build wrote, so what you reviewed is what gets applied.`,
 		newDownCommand(opts),
 		newDiffCommand(opts),
 	)
+
+	// cobra contributes the `completion` command itself; this fills in the value
+	// completions it cannot infer (kube contexts, plan labels).
+	registerCompletions(cmd, opts)
 
 	return cmd
 }

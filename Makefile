@@ -5,10 +5,45 @@ COMPOSE ?= docker-compose
 COMPOSE_FILE := test/e2e/docker-compose.yml
 KUBECONFIG_PATH := test/e2e/.kube/kubeconfig.yaml
 
-.PHONY: build test lint e2e e2e-up e2e-test e2e-down
+# Build metadata stamped into the binary (see internal/version). Every value is
+# overridable, so a release pipeline can pass its own — e.g.
+# `make build DATE=$(git log -1 --format=%cs)` for a build that reproduces
+# byte-for-byte from the same commit.
+#
+# Each falls back to a constant when git is unavailable (source tarball, Docker
+# build without .git), so `make build` never fails over metadata.
+VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo dev)
+# Date only: the time of day says nothing useful about a build, and it makes two
+# builds of the same commit look different.
+DATE ?= $(shell date -u +%Y-%m-%d)
+
+# Resolved in two steps on purpose: outside a git repository the dirty check
+# fails too, and appending its result unconditionally would stamp "none-dirty".
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
+ifeq ($(GIT_COMMIT),)
+COMMIT ?= none
+else
+# A trailing -dirty marks a binary built with uncommitted changes: without it,
+# the recorded commit would claim the build matches that revision. `diff HEAD`
+# covers staged changes too, which plain `git diff` misses.
+COMMIT ?= $(GIT_COMMIT)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
+endif
+
+VERSION_PKG := github.com/helmwave/nelmwave/internal/version
+LDFLAGS := -X $(VERSION_PKG).Version=$(VERSION) \
+           -X $(VERSION_PKG).Commit=$(COMMIT) \
+           -X $(VERSION_PKG).Date=$(DATE)
+
+.PHONY: build test lint e2e e2e-up e2e-test e2e-down version
 
 build:
-	go build ./cmd/nelmwave
+	go build -ldflags '$(LDFLAGS)' ./cmd/nelmwave
+
+## version: print the metadata `make build` would stamp in, without building.
+version:
+	@echo "version=$(VERSION)"
+	@echo "commit=$(COMMIT)"
+	@echo "date=$(DATE)"
 
 test:
 	go test ./...

@@ -101,41 +101,55 @@ cluster.
 
 ### `repositories`
 
-A map keyed by alias (helm repos) or host (OCI registries). The URL scheme
-decides which is which: `https://` is a classic helm repository, `oci://` an OCI
-registry. A value is either a bare URL string or an object:
+A map keyed by alias (helm repos) or host (OCI registries). The URL scheme says
+what it is and how to reach it: `https://` (or `http://`) is a classic helm
+repository, `oci://` an OCI registry over TLS, `oci+http://` one without. A
+value is either a bare URL string or an object:
 
 | Field | Meaning |
 |---|---|
 | `url` | Repository index URL or OCI registry URL. Required. |
 | `username`, `password` | Basic-auth credentials. |
-| `insecure_skip_tls_verify` | Disable TLS verification for this repo. |
-| `pass_credentials` | Forward credentials to all domains, not just the repo host. |
-| `ca_file` | Path to a CA bundle for this repo. |
-| `cert_file`, `key_file` | Client TLS certificate and key (mTLS to the repository). |
-| `oci_plain_http` | **OCI only.** Reach the registry over `http://`. A helm repository states its scheme in the `url`, so the field is rejected there. |
-| `skip_update` | Don't refresh the chart's declared `dependencies:` before pulling them. No effect on charts without subcharts. |
-| `request_timeout` | Bound a single request to the repository, e.g. `30s`. The release `timeout` still applies on top. |
-| `provenance_strategy` | Verify the chart's PGP signature: `never` (default), `if-possible`, `always`, `later`. |
-| `provenance_keyring` | Keyring with the public keys to check the signature against. Defaults to helm's `~/.gnupg/pubring.gpg`. |
+| `insecureSkipTLSVerify` | Disable TLS verification for this repo. |
+| `passCredentials` | Forward credentials to all domains, not just the repo host. |
+| `caFile` | Path to a CA bundle for this repo. |
+| `certFile`, `keyFile` | Client TLS certificate and key (mTLS to the repository). |
+| — | Plain-HTTP OCI has no field: write the registry as `oci+http://` (see below). |
+| `skipUpdate` | Don't refresh the chart's declared `dependencies:` before pulling them. No effect on charts without subcharts. |
+| `requestTimeout` | Bound a single request to the repository, e.g. `30s`. The release `timeout` still applies on top. |
+| `provenanceStrategy` | Verify the chart's PGP signature: `never` (default), `if-possible`, `always`, `later`. |
+| `provenanceKeyring` | Keyring with the public keys to check the signature against. Defaults to helm's `~/.gnupg/pubring.gpg`. |
 
 There is no `repositories.yaml` step: a helm-repo chart is fetched helm
 `--repo` style (chart name plus repo URL), and OCI credentials are handed to nelm
 through a generated, temporary `config.json`.
 
-`oci_plain_http` exists only because `oci://` names an artifact, not a transport:
-the registry client defaults to HTTPS and has no URL scheme to read otherwise.
-It is unrelated to `insecure_skip_tls_verify`, which keeps TLS and only stops
+**Registries without TLS.** `oci://` names an artifact but not a transport, so
+the client defaults to HTTPS. Write `oci+http://` to say otherwise:
+
+```yaml
+repositories:
+  dev: oci+http://registry:5000       # local registry, no TLS
+```
+
+nelm accepts only `oci://`, so nelmwave rewrites the reference and passes the
+choice along separately — you never write the scheme twice. The chart may be
+addressed either way: `oci://registry:5000/api` resolves against the
+`oci+http://` registry declared above, because the scheme is transport, not
+identity. Spelling the chart itself `oci+http://…` works too, and is the only
+option for a registry that is not declared at all.
+
+This is unrelated to `insecureSkipTLSVerify`, which keeps TLS and only stops
 verifying the certificate.
 
 **Chart signatures.** A signed chart is published with a `.prov` file next to the
-archive, holding a hash of it plus a PGP signature. `provenance_strategy: always`
+archive, holding a hash of it plus a PGP signature. `provenanceStrategy: always`
 refuses to deploy a chart whose signature is missing or does not verify;
 `if-possible` checks it only when a `.prov` exists. Most public repositories
 publish no signatures at all, so `always` on `bitnami/*` will simply fail —
 it is meant for internal repositories whose charts you pack and sign yourself.
 The setting belongs to the repository, and it applies to OCI registries too:
-an `oci://` chart is matched to its registry by URL prefix, longest first.
+an OCI chart is matched to its registry by address prefix, longest first.
 
 ### `releases`
 
@@ -158,6 +172,39 @@ Free-form key/value labels used for selection (`-l`) and for label-based
 `needs`. Values are coerced to strings, so `common: true` and `replicas: 3` are
 accepted. Keys and values must be valid Kubernetes labels.
 
+They are also written onto the release's storage object (the Secret or ConfigMap
+holding release state), so the same labels find the release in the cluster:
+
+```sh
+kubectl get secret -n app -l app=api,owner=helm
+```
+
+There is no second field for this. Helm's own `name`, `owner`, `status` and
+`version` are applied after yours and win, so a label called `name` still selects
+in the manifest but does not reach the storage object.
+
+#### `annotations`
+
+Stored with **each revision** of the release and read back with `nelm release
+get` — the natural place for where a rollout came from:
+
+```yaml
+Release:                                        # once, for every release
+  annotations:
+    ci/pipeline: [[ getenv "CI_PIPELINE_URL" ]]
+    ci/commit: [[ getenv "CI_COMMIT_SHA" ]]
+```
+
+Unlike `labels` these are **not selectable**: they live inside the serialized
+release, not in the storage object's metadata, so `kubectl get -l` cannot see
+them. In exchange they take values a label cannot — URLs, e-mail addresses,
+commit messages. Values are coerced to strings, and being a map they deep-merge
+with the `Release:` block, so per-release annotations add to the common ones
+rather than replacing them.
+
+These describe the release itself. Annotations on every rendered resource are a
+different thing and not implemented yet.
+
 #### `chart`
 
 ```yaml
@@ -169,7 +216,8 @@ chart:
 `name` is required and may be:
 
 - `alias/chart` — resolved against a declared helm repository;
-- `oci://host/path/chart` — an OCI reference;
+- `oci://host/path/chart` — an OCI reference (`oci+http://` for a registry
+  without TLS);
 - anything else — a local chart path.
 
 nelmwave orchestrates external charts only; it ships no chart templates of its
@@ -401,6 +449,48 @@ next name collision silently steals someone else's resources instead of failing.
 `removeManualChanges` applies to both and to `diff`, so the preview matches what
 the apply will do.
 
+#### `driverURL`
+
+Where the release keeps its state — the history of revisions, their manifests
+and values. A URL, so one field carries both the choice and its parameters:
+
+| URL | State lives in |
+|---|---|
+| `kubernetes://secrets` | A Secret per revision in the release namespace. The default. |
+| `kubernetes://configmaps` | A ConfigMap per revision. |
+| `psql://user@host:5432/db` | PostgreSQL. `postgres://` and `postgresql://` work too. |
+
+```yaml
+Release:                                   # once, for the whole manifest
+  driverURL: psql://nelm@db.internal/nelm
+```
+
+Set it in the `Release:` block, not per release: a manifest whose releases keep
+state in different places is a good way to lose one.
+
+**Changing it later is not a migration.** The old revisions stay where they
+were, so nelmwave finds no history, treats the release as new, and refuses to
+touch resources that still name the previous release — or, with
+`forceAdoption`, adopts them and drops the history on the floor. Move the state
+yourself before switching.
+
+`kubernetes://configmaps` exists for compatibility with what Helm 2 did. Mind
+the permissions: release state includes rendered values, and a ConfigMap is
+readable by anyone who can `get configmaps` — including the values you took the
+trouble to encrypt with sops.
+
+PostgreSQL is worth it when releases outgrow the ~1 MB an object can hold (large
+CRDs do this), when history should outlive the namespace, or to keep the churn
+out of etcd. nelm creates its own schema on first connect. **Do not put the
+password in the URL**: `build` copies the manifest into
+`.nelmwave/planfile.yml`, so it would sit in cleartext on disk and in CI
+artifacts. Leave it out and let libpq read `PGPASSWORD` — `build` warns if it
+finds one embedded.
+
+nelm also has a `memory` driver. nelmwave does not offer it: state that dies
+with the process means the next `up` sees no history and tries to adopt the
+resources it installed itself.
+
 ### `Release:` — defaults for every release
 
 The top-level `Release:` block is a confijer *type default*: it applies to every
@@ -468,9 +558,11 @@ in review.
 | `nelmwave up` | Deploy the selected releases in dependency order |
 | `nelmwave down` | Uninstall the selected releases in reverse order |
 | `nelmwave diff` | Show the changes that would be applied (alias: `plan`) |
+| `nelmwave completion` | Print a shell completion script (bash/zsh/fish/powershell) |
 
 Global flags: `--log-level` (debug/info/warn/error), `--log-format`
-(auto/console/json), `--kube-context`, `--kube-config`, `--version`.
+(auto/console/json), `--version`, and the cluster-connection flags below
+(`--kube-context`, `--kube-config`, ...).
 
 Common command flags: `-l/--selector`, `--concurrency`, `--output`,
 `--include-needs` (up, down, diff), `--file` (build, `up --build`),
@@ -481,6 +573,73 @@ CI logs stay machine-readable without a flag.
 
 `--log-level` also sets nelm's own verbosity, so `--log-level debug` gets you
 the engine's debug output too, and `--log-level error` silences its progress.
+
+### Shell completion
+
+```sh
+# bash — for the current shell
+source <(nelmwave completion bash)
+
+# bash — permanently (requires bash-completion)
+nelmwave completion bash > /usr/local/etc/bash_completion.d/nelmwave   # macOS, brew
+nelmwave completion bash > /etc/bash_completion.d/nelmwave             # Linux
+
+# zsh — permanently, into a directory on your $fpath
+nelmwave completion zsh > "${fpath[1]}/_nelmwave"
+```
+
+zsh needs `compinit` enabled; if it is not, add `autoload -U compinit; compinit`
+to `~/.zshrc` before the line above. `fish` and `powershell` scripts are
+available from the same command.
+
+Beyond command and flag names, completion fills in values:
+
+| Typing | Suggests |
+|---|---|
+| `-l <TAB>` | label keys from the built plan (`app=`, `tier=`, ...) |
+| `-l app=<TAB>` | the values that key has across your releases |
+| `-l app=api,<TAB>` | keys again, keeping what you already typed |
+| `--kube-context <TAB>` | contexts from your kubeconfig |
+| `--log-level <TAB>`, `--log-format <TAB>` | the accepted values |
+| `--file <TAB>`, `--output <TAB>` | manifests (`.yml`/`.yaml`/`.tpl`) and directories |
+
+Label completion reads `.nelmwave/planfile.yml` (or `--output`), so it starts
+working after the first `build` and reflects the plan you are about to apply. The
+commands take no positional arguments, so `nelmwave up <TAB>` offers nothing
+instead of listing the current directory.
+
+### Reaching the cluster
+
+By default nelmwave reads a kubeconfig, exactly as `kubectl` would. `--kube-config`
+is repeatable and behaves like `KUBECONFIG=a:b` — files merge, and where they
+disagree the earlier one wins. A release's uniqname picks the context
+(`api@app@staging`), and `--kube-context` sets it for releases that name none.
+
+Where there is no kubeconfig — CI with a ServiceAccount token — the connection
+can be given directly:
+
+```sh
+nelmwave up \
+  --kube-api-server https://k8s.example.com:6443 \
+  --kube-token-path /var/run/secrets/kubernetes.io/serviceaccount/token \
+  --kube-ca /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+```
+
+| Flags | For |
+|---|---|
+| `--kube-config`, `--kube-config-base64`, `--kube-context`, `--kube-context-cluster`, `--kube-context-user` | Choosing what to use from a kubeconfig |
+| `--kube-api-server`, `--kube-token`, `--kube-token-path`, `--kube-ca`, `--kube-ca-data`, `--no-verify-kube-tls`, `--kube-api-server-tls-name`, `--kube-proxy-url` | Connecting without one |
+| `--kube-cert`, `--kube-cert-data`, `--kube-key`, `--kube-key-data`, `--kube-auth-username`, `--kube-auth-password` | Client certificates and basic auth |
+| `--kube-impersonate-user`, `--kube-impersonate-group`, `--kube-impersonate-uid` | Acting as someone else (`kubectl --as`) |
+| `--kube-qps-limit`, `--kube-burst-limit`, `--kube-request-timeout` | Client-side throttling |
+
+These are flags and not manifest fields on purpose: a token or a key written into
+`nelmwave.yml` would be copied into `.nelmwave/planfile.yml` and travel with the
+build artifacts. Pass secrets on the command line or point at a file.
+
+The same connection is used for nelmwave's own calls — the namespace metadata it
+applies before handing over to nelm — so labels and workloads cannot end up in
+different clusters.
 
 ### How much `diff` prints
 

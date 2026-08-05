@@ -41,7 +41,8 @@ type deployOptions struct {
 	concurrency  int
 	includeNeeds bool
 	kubeContext  string
-	kubeConfig   string
+	// kube is the cluster connection built from the global flags.
+	kube release.KubeConnection
 	// registryConfigPath is set internally to a generated Docker config.json for
 	// OCI credentials (see repo.DockerConfig).
 	registryConfigPath string
@@ -416,7 +417,7 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 	var repoTimeout time.Duration
 	if chart.RequestTimeout != "" {
 		if repoTimeout, err = time.ParseDuration(chart.RequestTimeout); err != nil {
-			return release.Spec{}, fmt.Errorf("release %q: invalid repository request_timeout %q: %w",
+			return release.Spec{}, fmt.Errorf("release %q: invalid repository requestTimeout %q: %w",
 				key, chart.RequestTimeout, err)
 		}
 	}
@@ -426,11 +427,17 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 		return release.Spec{}, fmt.Errorf("release %q: %w", key, err)
 	}
 
+	// Validated at build time as well; a failure here means a hand-edited plan.
+	driver, err := config.ParseDriverURL(rel.DriverURL)
+	if err != nil {
+		return release.Spec{}, fmt.Errorf("release %q: %w", key, err)
+	}
+
 	return release.Spec{
 		Name:                 id.Name,
 		Namespace:            namespace,
 		KubeContext:          kubeContext,
-		KubeConfig:           o.kubeConfig,
+		Kube:                 o.kube,
 		Chart:                chart.Ref,
 		ChartVersion:         rel.Chart.Version,
 		ValuesFiles:          valuesFiles,
@@ -441,11 +448,15 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 		NamespaceAnnotations: rel.Namespace.Annotations,
 		NamespaceLabels:      rel.Namespace.Labels,
 		AutoRollback:         rel.AutoRollback,
+		Labels:               rel.Labels,
+		Annotations:          rel.Annotations,
 		ForceAdoption:        rel.ForceAdoption,
 		RemoveManualChanges:  rel.RemoveManualChanges,
 		InstallCRDs:          rel.InstallCRDs,
 		DeletePropagation:    rel.DeletePropagation,
 		HistoryLimit:         rel.HistoryLimit,
+		StorageDriver:        driver.Driver,
+		StorageSQLConnection: driver.SQLConnection,
 		RepoURL:              chart.RepoURL,
 		RepoUsername:         chart.Username,
 		RepoPassword:         chart.Password,

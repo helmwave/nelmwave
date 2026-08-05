@@ -50,12 +50,13 @@ type Need struct {
 // ("name[@namespace[@kubecontext]]") in Plan.Releases. It mirrors config.Release
 // but stores resolved dependency edges and artifact paths.
 type Release struct {
-	Labels map[string]string `yaml:"labels,omitempty"`
-	Needs  []Need            `yaml:"needs,omitempty"`
-	Chart  config.Chart      `yaml:"chart,omitempty"`
-	Values []config.FileRef  `yaml:"values,omitempty"`
-	Sets   map[string]any    `yaml:"sets,omitempty"`
-	Stores []config.FileRef  `yaml:"stores,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Needs       []Need            `yaml:"needs,omitempty"`
+	Chart       config.Chart      `yaml:"chart,omitempty"`
+	Values      []config.FileRef  `yaml:"values,omitempty"`
+	Sets        map[string]any    `yaml:"sets,omitempty"`
+	Stores      []config.FileRef  `yaml:"stores,omitempty"`
 
 	// Namespace creation policy and metadata for this release.
 	Namespace config.Namespace `yaml:"namespace"`
@@ -70,6 +71,7 @@ type Release struct {
 	InstallCRDs         bool   `yaml:"installCRDs"`
 	DeletePropagation   string `yaml:"deletePropagation,omitempty"`
 	HistoryLimit        int    `yaml:"historyLimit,omitempty"`
+	DriverURL           string `yaml:"driverURL,omitempty"`
 
 	// ValuesFiles are the plan-relative paths to the resolved values files, in
 	// precedence order (lowest first: global values, then per-release). They are
@@ -87,6 +89,7 @@ func FromConfig(cfg *config.Config) *Plan {
 	for name, r := range cfg.Releases {
 		p.Releases[name] = Release{
 			Labels:              r.Labels,
+			Annotations:         r.Annotations,
 			Needs:               resolveNeeds(cfg, name, r),
 			Chart:               r.Chart,
 			Values:              r.Values,
@@ -100,6 +103,7 @@ func FromConfig(cfg *config.Config) *Plan {
 			InstallCRDs:         r.InstallCRDs,
 			DeletePropagation:   r.DeletePropagation,
 			HistoryLimit:        r.HistoryLimit,
+			DriverURL:           r.DriverURL,
 		}
 	}
 	return p

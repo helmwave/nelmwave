@@ -286,6 +286,39 @@ func TestSetJSONArgs_NestedMapsAndTypes(t *testing.T) {
 	}
 }
 
+// The manifest's labels are also the release storage object's labels, so a
+// release can be found in the cluster by whatever selects it in the manifest.
+func TestDeploy_ManifestLabelsBecomeReleaseLabels(t *testing.T) {
+	f := &fakeApplier{}
+	if err := deploy(context.Background(), zap.NewNop(), testPlan(false), opts("", false), f, opInstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	if got := f.specs["a"].Labels["app"]; got != "a" {
+		t.Errorf("spec labels = %v, want app=a", f.specs["a"].Labels)
+	}
+}
+
+// Annotations travel with the release revision rather than the storage object,
+// so they must reach the spec even though nothing can select on them.
+func TestDeploy_AnnotationsReachTheApplier(t *testing.T) {
+	p := &plan.Plan{
+		Releases: map[string]plan.Release{
+			"a@ns": {
+				Chart:       config.Chart{Name: "r/a"},
+				Namespace:   config.Namespace{Create: true},
+				Annotations: map[string]string{"ci/pipeline": "48211"},
+			},
+		},
+	}
+	f := &fakeApplier{}
+	if err := deploy(context.Background(), zap.NewNop(), p, opts("", false), f, opInstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	if got := f.specs["a"].Annotations["ci/pipeline"]; got != "48211" {
+		t.Errorf("spec annotations = %v", f.specs["a"].Annotations)
+	}
+}
+
 func TestDeploy_ResourcePoliciesReachTheApplier(t *testing.T) {
 	p := &plan.Plan{
 		Releases: map[string]plan.Release{
