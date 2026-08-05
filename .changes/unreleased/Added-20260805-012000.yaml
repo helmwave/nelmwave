@@ -1,0 +1,9 @@
+kind: Added
+body: >-
+  Manifest templating through [gomplate v5](https://gomplate.ca) with `[[ ]]` action
+  delimiters, so Helm's own `{{ }}` passes through untouched. The render context
+  exposes `.Env`/`getenv` and gomplate's standard namespaces (`strings`, `datasource`,
+  `conv`, ...); a plain `nelmwave.yml` is loaded verbatim
+time: 2026-08-05T01:20:00.000000000+03:00
+custom:
+    Author: zhilyaev

@@ -1,0 +1,9 @@
+kind: Added
+body: >-
+  A runnable `examples/` project per feature area — dependencies, chart sources,
+  namespaces, resource policies, release storage, sops-encrypted values, datasource
+  cross-references and running in CI — all built by `make examples`, plus an asciicast
+  of the full loop in `demo/`
+time: 2026-08-05T05:20:00.000000000+03:00
+custom:
+    Author: zhilyaev

@@ -1,0 +1,14 @@
+kind: Added
+body: >-
+  Cluster connection entirely through flags, never manifest fields, so no credential
+  is copied into the build artifacts: a repeatable `--kube-config` that merges like
+  `KUBECONFIG=a:b` (earlier wins, as kubectl does), `--kube-context` for releases
+  whose uniqname names none, direct connection without a kubeconfig
+  (`--kube-api-server`, `--kube-token[-path]`, `--kube-ca[-data]`, ...), client
+  certificates and basic auth, impersonation (`--kube-impersonate-user`, ...) and
+  client-side throttling (`--kube-qps-limit`, `--kube-burst-limit`,
+  `--kube-request-timeout`). nelmwave's own namespace calls use the same connection,
+  so metadata and workloads cannot land in different clusters
+time: 2026-08-05T04:50:00.000000000+03:00
+custom:
+    Author: zhilyaev

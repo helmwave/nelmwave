@@ -1,0 +1,8 @@
+kind: Added
+body: >-
+  `sets`: inline dotted-path value overrides applied on top of `values`, reaching nelm
+  as type-preserving JSON — `3` stays a number and `false` stays a boolean, unlike
+  `helm --set`
+time: 2026-08-05T02:50:00.000000000+03:00
+custom:
+    Author: zhilyaev

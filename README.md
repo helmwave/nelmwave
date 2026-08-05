@@ -1,5 +1,9 @@
 # nelmwave
 
+[![ci](https://github.com/helmwave/nelmwave/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/helmwave/nelmwave/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/helmwave/nelmwave?sort=semver)](https://github.com/helmwave/nelmwave/releases/latest)
+[![go report](https://goreportcard.com/badge/github.com/helmwave/nelmwave)](https://goreportcard.com/report/github.com/helmwave/nelmwave)
+
 Declarative release orchestrator on top of [nelm](https://github.com/werf/nelm)
 (the werf team's Helm replacement). Spiritually a sibling of
 [helmwave](https://github.com/helmwave/helmwave), but with a new schema and a
@@ -14,13 +18,33 @@ releases, and applies everything through nelm — in parallel, respecting order.
 > datasource resolution, the dependency DAG, label selection, and chart
 > resolution against helm repositories and OCI registries.
 
+## Installing
+
+```sh
+# macOS and Linux
+brew install helmwave/tap/nelmwave
+
+# any platform: grab an archive from the releases page
+# https://github.com/helmwave/nelmwave/releases/latest
+
+# container — also :latest-scratch (no shell) and :latest-debug (bash, jq, kubectl)
+docker run --rm -v "$PWD:/workspace" ghcr.io/helmwave/nelmwave:latest build
+
+# from source
+go install github.com/helmwave/nelmwave/cmd/nelmwave@latest
+```
+
 ## Building
 
 ```sh
 go build ./cmd/nelmwave
 ```
 
-Requires Go 1.26+.
+Requires Go 1.26+. Use `make build` when the version stamped into the binary
+matters — plain `go build` leaves it at its `dev` fallback.
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development and release flow
+(trunk-based, changie fragments, goreleaser).
 
 ## Quick start
 
@@ -579,6 +603,43 @@ CI logs stay machine-readable without a flag.
 
 `--log-level` also sets nelm's own verbosity, so `--log-level debug` gets you
 the engine's debug output too, and `--log-level error` silences its progress.
+
+### Environment variables
+
+Every flag can be set through an environment variable instead: uppercase the
+name, swap `-` for `_`, prefix with `NELMWAVE_`.
+
+| Flag | Variable |
+|---|---|
+| `--log-level` | `NELMWAVE_LOG_LEVEL` |
+| `--output` | `NELMWAVE_OUTPUT` |
+| `--selector` | `NELMWAVE_SELECTOR` |
+| `--kube-context` | `NELMWAVE_KUBE_CONTEXT` |
+| `--kube-request-timeout` | `NELMWAVE_KUBE_REQUEST_TIMEOUT` |
+
+The rule has no exceptions — `nelmwave <command> --help` prints the variable
+next to each flag, so there is nothing to look up.
+
+```sh
+# One pipeline-wide setting instead of repeating it on every command
+export NELMWAVE_LOG_FORMAT=json
+export NELMWAVE_KUBE_CONTEXT=prod
+
+nelmwave build && nelmwave diff --detailed-exitcode && nelmwave up
+```
+
+Precedence is flag, then variable, then default: a flag on the command line
+always wins, so a CI-wide variable stays overridable per invocation. An empty
+variable counts as unset. A value the flag cannot parse fails the command and
+names the variable:
+
+```
+Error: NELMWAVE_CONCURRENCY="abc": invalid argument "abc" for "--concurrency" flag
+```
+
+Note that the manifest sees the whole environment through gomplate
+(`[[ env.Getenv "ENV" ]]`), which is a separate mechanism with no prefix rule —
+`NELMWAVE_*` is only about flags.
 
 ### Shell completion
 

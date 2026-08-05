@@ -1,0 +1,79 @@
+version: 2
+
+updates:
+  # Go modules: one grouped PR a week rather than a stream of single-dependency
+  # PRs, because every one of them costs a full CI run including e2e.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'feat'
+    labels:
+      - dependencies
+      - skip-changelog
+    groups:
+      # Direct dependencies are worth reading one by one — nelm and gomplate in
+      # particular change behaviour, not just versions.
+      direct:
+        applies-to: version-updates
+        patterns:
+          - github.com/getsops/sops/v3
+          - github.com/hairyhenderson/gomplate/v5
+          - github.com/helmwave/confijer
+          - github.com/spf13/*
+          - github.com/werf/nelm
+          - go.uber.org/zap
+      indirect:
+        applies-to: version-updates
+        patterns:
+          - '*'
+        exclude-patterns:
+          - github.com/getsops/sops/v3
+          - github.com/hairyhenderson/gomplate/v5
+          - github.com/helmwave/confijer
+          - github.com/spf13/*
+          - github.com/werf/nelm
+          - go.uber.org/zap
+        update-types:
+          - minor
+          - patch
+    # These are held down by `replace` directives in go.mod, each with a comment
+    # explaining what breaks when it moves: k8s.io/* at 0.29.x, docker/cli at v25
+    # (oras-go vs sops), mergo at v0.3.6 (kubeconfig merge order must stay
+    # first-wins, like kubectl). A dependabot PR bumping them is noise at best —
+    # the replace keeps the old version anyway.
+    ignore:
+      - dependency-name: k8s.io/*
+      - dependency-name: github.com/docker/cli
+      - dependency-name: github.com/imdario/mergo
+
+  # Actions are pinned by major tag; this catches the ones that go stale.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: 'feat'
+    labels:
+      - dependencies
+      - skip-changelog
+    groups:
+      actions:
+        patterns:
+          - '*'
+
+  # The release image base (alpine in Dockerfile).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: 'feat'
+    labels:
+      - dependencies
+      - skip-changelog

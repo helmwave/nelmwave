@@ -69,6 +69,12 @@ plan that build wrote, so what you reviewed is what gets applied.`,
 		// Build the logger once, before any subcommand RunE, and stash it in
 		// the command context so subcommands can pull it out.
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Environment first: every flag below, including --log-level, can be
+			// set through NELMWAVE_*, and nothing has read a flag value yet.
+			if err := applyEnv(cmd); err != nil {
+				return err
+			}
+
 			logger, err := log.New(log.Options{
 				Level:  opts.logLevel,
 				Format: log.Format(opts.logFormat),
@@ -104,6 +110,10 @@ plan that build wrote, so what you reviewed is what gets applied.`,
 	// cobra contributes the `completion` command itself; this fills in the value
 	// completions it cannot infer (kube contexts, plan labels).
 	registerCompletions(cmd, opts)
+
+	// Documents the NELMWAVE_* variable behind each flag in --help. Must come
+	// after the tree is assembled, since it walks the subcommands.
+	annotateEnvUsage(cmd)
 
 	return cmd
 }

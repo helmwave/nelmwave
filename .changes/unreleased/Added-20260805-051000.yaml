@@ -1,0 +1,8 @@
+kind: Added
+body: >-
+  Logging controlled by `--log-level` (debug/info/warn/error, which also sets nelm's
+  own verbosity) and `--log-format`, where `auto` picks console output on a TTY and
+  JSON everywhere else so CI logs stay machine-readable without a flag
+time: 2026-08-05T05:10:00.000000000+03:00
+custom:
+    Author: zhilyaev

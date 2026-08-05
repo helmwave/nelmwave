@@ -1,0 +1,8 @@
+kind: Added
+body: >-
+  `chart.name` accepts three forms — `alias/chart` resolved against a declared helm
+  repository, an `oci://` (or `oci+http://`) reference, and a local chart path — with
+  an optional `version` constraint
+time: 2026-08-05T02:10:00.000000000+03:00
+custom:
+    Author: zhilyaev

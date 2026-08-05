@@ -1,0 +1,17 @@
+# Only the `release` and `scratch-release` targets read this file: they compile
+# inside the image, so the sources have to reach the build context. The
+# goreleaser targets build from a temporary context that goreleaser assembles
+# itself (Dockerfile + artifacts), where this file plays no part.
+#
+# Everything else is noise — and .nelmwave/ in particular would carry decrypted
+# secrets into an image layer.
+*
+
+!go.mod
+!go.sum
+!cmd/
+!internal/
+
+# Belt and braces: these are inside the allowed directories above.
+**/.nelmwave/
+**/*_test.go

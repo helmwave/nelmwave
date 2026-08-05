@@ -1,0 +1,8 @@
+kind: Added
+body: Every flag can now be set through an environment variable — uppercase the
+  flag, swap `-` for `_`, prefix with `NELMWAVE_` (`NELMWAVE_LOG_LEVEL`,
+  `NELMWAVE_KUBE_CONTEXT`, ...). Precedence is flag, then variable, then default,
+  and `--help` prints the variable next to each flag
+time: 2026-08-05T19:00:00.000000000+03:00
+custom:
+    Author: zhilyaev

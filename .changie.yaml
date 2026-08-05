@@ -1,0 +1,66 @@
+changesDir: .changes
+unreleasedDir: unreleased
+headerPath: header.tpl.md
+changelogPath: CHANGELOG.md
+versionExt: md
+
+# `# Changelog` is the H1 in header.tpl.md, so versions are H2 and kinds H3.
+versionFormat: "## {{ .Version }} — {{ .Time.Format \"2006-01-02\" }}"
+kindFormat: "### {{ .Kind }}"
+# `with` rather than a bare `{{ .Custom.Author }}`: a fragment written by hand or
+# by a bot has no custom values, and Go templates render those as `<no value>`
+# instead of failing.
+changeFormat: >-
+  * {{ if .Custom.Issue }}[#{{ .Custom.Issue }}](https://github.com/helmwave/nelmwave/issues/{{ .Custom.Issue }}) {{ end }}{{ .Body }}{{ with .Custom.Author }} (@{{ . }}){{ end }}
+footerFormat: >-
+  **Full changelog**: [{{ .PreviousVersion }}...{{ .Version }}](https://github.com/helmwave/nelmwave/compare/{{ .PreviousVersion }}...{{ .Version }})
+
+# Labels are single words, so they are safe in a filename as-is.
+fragmentFileFormat: "{{ .Kind }}-{{ .Time.Format \"20060102-150405\" }}"
+
+custom:
+  - key: Issue
+    label: Issue number (leave empty to skip)
+    minInt: 1
+    optional: true
+    type: int
+  - key: Author
+    label: Author's GitHub username
+    minLength: 1
+    type: string
+
+# Keep a Changelog kinds, as header.tpl.md and CONTRIBUTING.md promise.
+# No kind maps to `auto: major` while the project is pre-1.0: with a 0.x version
+# a single breaking fragment would batch straight to v1.0.0. Run the release-pr
+# workflow with an explicit `major` bump when v1.0.0 is actually intended.
+kinds:
+  - label: Added
+    auto: minor
+  - label: Changed
+    auto: minor
+  - label: Removed
+    auto: minor
+  - label: Deprecated
+    auto: patch
+  - label: Fixed
+    auto: patch
+  - label: Security
+    auto: patch
+  - label: Dependencies
+    auto: patch
+    # Dependabot writes these; there is no human to attribute and no issue.
+    skipGlobalChoices: true
+
+newlines:
+  afterChangelogHeader: 0
+  beforeChangelogVersion: 1
+  afterChangelogVersion: 2
+  afterVersion: 0
+  beforeKind: 1
+  afterKind: 1
+  beforeChange: 0
+  afterChange: 0
+  beforeFooterFile: 1
+  beforeFooterTemplate: 1
+  afterFooterTemplate: 0
+  endOfVersion: 1

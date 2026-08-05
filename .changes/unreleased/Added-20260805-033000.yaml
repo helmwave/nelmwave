@@ -1,0 +1,8 @@
+kind: Added
+body: >-
+  `annotations` on releases, stored with each revision and read back with `nelm
+  release get` — values a label cannot hold (URLs, commit messages, e-mail addresses),
+  deep-merged with the `Release:` block so per-release entries add to the common ones
+time: 2026-08-05T03:30:00.000000000+03:00
+custom:
+    Author: zhilyaev

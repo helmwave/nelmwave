@@ -1,0 +1,11 @@
+kind: Added
+body: >-
+  An end-to-end suite driving the real command tree against a real Kubernetes API
+  (build, up, a clean diff, a drifting diff with exit code 2, the upgrade that
+  resolves it, a selective down, a full down, the needs policy). The cluster is a k3s
+  container owned by docker-compose, the suite sits behind the `e2e` build tag so `go
+  test ./...` never reaches for a cluster, and it installs a local chart from
+  `testdata` so nothing is downloaded
+time: 2026-08-05T05:30:00.000000000+03:00
+custom:
+    Author: zhilyaev

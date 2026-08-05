@@ -1,0 +1,10 @@
+kind: Added
+body: >-
+  Datasource cross-references: within a release `stores` resolve before `values`, and
+  every resolved artifact is registered as a gomplate datasource (`stores/<name>`,
+  `values/<name>`) visible to later artifacts of the same release. Resolution is
+  backward-only, and a skipped `optional` source resolves to an empty placeholder
+  instead of an error
+time: 2026-08-05T02:40:00.000000000+03:00
+custom:
+    Author: zhilyaev

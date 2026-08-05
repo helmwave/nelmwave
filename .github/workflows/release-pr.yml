@@ -1,0 +1,121 @@
+# Step one of a release: batch the changie fragments into a version file and open
+# a PR with the result. Nothing is tagged or published here — the PR is the review
+# point, and merging it is what triggers .github/workflows/release.yml.
+#
+# Trigger it from the Actions tab (or `gh workflow run release-pr.yml`).
+name: release-pr
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump: auto derives it from the fragment kinds'
+        type: choice
+        required: true
+        default: auto
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+      # A prerelease still batches the same fragments, so the eventual stable
+      # release repeats them. Use it for rc builds you intend to throw away.
+      prerelease:
+        description: 'Optional prerelease suffix, e.g. rc.1 (leave empty for a normal release)'
+        type: string
+        required: false
+        default: ''
+
+concurrency:
+  # Two release PRs in flight would batch the same fragments twice.
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-pr:
+    name: open release PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: miniscruff/changie-action@v2
+        with:
+          version: latest
+          args: --version
+
+      - name: refuse to release nothing
+        run: |
+          if [ -z "$(find .changes/unreleased -name '*.yaml' -o -name '*.yml' 2>/dev/null)" ]; then
+            echo "::error::.changes/unreleased/ is empty — nothing to release."
+            exit 1
+          fi
+
+      # `changie batch` moves the fragments into .changes/<version>.md and
+      # `changie merge` regenerates CHANGELOG.md from every version file. The
+      # version it picks is the single source of truth for the tag that follows.
+      - name: batch the changelog
+        id: batch
+        env:
+          BUMP: ${{ inputs.bump }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          args=("$BUMP")
+          if [ -n "$PRERELEASE" ]; then
+            args+=(--prerelease "$PRERELEASE")
+          fi
+
+          changie batch "${args[@]}"
+          changie merge
+
+          version=$(changie latest)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "notes=.changes/${version}.md" >> "$GITHUB_OUTPUT"
+          echo "## $version" >> "$GITHUB_STEP_SUMMARY"
+          cat ".changes/${version}.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: open the pull request
+        env:
+          # A PR opened with GITHUB_TOKEN does not trigger `pull_request`
+          # workflows, so CI would not run on the release PR itself. Set the
+          # optional RELEASE_TOKEN secret (a PAT with `contents: write` and
+          # `pull-requests: write`) to get a fully checked release PR.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.batch.outputs.version }}
+          NOTES: ${{ steps.batch.outputs.notes }}
+        run: |
+          set -euo pipefail
+
+          branch="release/${VERSION}"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git switch -c "$branch"
+          git add CHANGELOG.md .changes
+          git commit -m "feat: release ${VERSION}"
+          git push --force-with-lease origin "$branch"
+
+          # `--force-with-lease` above plus edit-on-exists here make a re-run of
+          # this workflow for the same version update the PR instead of failing.
+          if ! gh pr view "$branch" --json number >/dev/null 2>&1; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "feat: release ${VERSION}" \
+              --label skip-changelog \
+              --body "$(printf 'Merging this PR tags **%s** and publishes the release.\n\n%s\n' \
+                "$VERSION" "$(cat "$NOTES")")"
+          else
+            gh pr edit "$branch" \
+              --title "feat: release ${VERSION}" \
+              --body "$(printf 'Merging this PR tags **%s** and publishes the release.\n\n%s\n' \
+                "$VERSION" "$(cat "$NOTES")")"
+          fi

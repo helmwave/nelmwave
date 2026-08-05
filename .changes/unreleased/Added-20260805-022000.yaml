@@ -1,0 +1,13 @@
+kind: Added
+body: >-
+  `values` and `stores`, both lists of file references resolved through a datasource
+  layer: `values` become the release's values files in merge order, `stores` are
+  companion files copied alongside them. Any gomplate scheme works (`env:`,
+  `http(s)://`, `s3://`, `git://`, `vault://`, ...), four spellings are accepted (bare
+  string or `src:` mapping, with or without a scheme), `name:` fixes the resolved
+  artifact's name and `optional: true` skips a source that does not exist. Behaviour
+  comes from the extension, not the scheme: `.yml` is copied verbatim, `.yml.tpl`
+  rendered
+time: 2026-08-05T02:20:00.000000000+03:00
+custom:
+    Author: zhilyaev

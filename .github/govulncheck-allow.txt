@@ -1,0 +1,38 @@
+# Reachable vulnerabilities that CI is allowed to see (see the `security` job in
+# .github/workflows/ci.yml). Anything NOT listed here fails the build, so this
+# file is the record of what we knowingly ship with — keep it short and dated.
+#
+# Look an ID up at https://pkg.go.dev/vuln/<ID>.
+#
+# Every entry below is transitive: nelm and sops pull in the docker/containerd
+# stack for OCI chart access, and none of it is reachable from a code path
+# nelmwave exposes on its own. They are still listed one by one rather than
+# waved away with a module-wide rule, so a *new* CVE in the same module is a
+# build failure, not a silent addition.
+#
+# Recorded 2026-08-05 against the dependency set in go.mod. Re-check after any
+# nelm, sops or docker/cli bump: the shortest way to shorten this list is to
+# drop the entries that stop being reachable.
+
+# github.com/containerd/containerd — dragged in by nelm's OCI registry client.
+# Fixing these needs a containerd bump, which is gated on the docker/cli v25
+# `replace` pin in go.mod (oras-go vs sops conflict, see the comment there).
+GO-2025-3528
+GO-2025-4100
+GO-2025-4108
+GO-2026-5064
+GO-2026-5338
+GO-2026-5475
+GO-2026-5622
+GO-2026-5758
+
+# github.com/docker/docker — same story: pulled in behind the docker/cli pin.
+GO-2025-3829
+GO-2026-4883
+GO-2026-4887
+GO-2026-5668
+
+# golang.org/x/crypto — this one is probably a plain `go get -u
+# golang.org/x/crypto` away from being fixed. Do that and delete this line
+# rather than letting it sit here.
+GO-2026-5932

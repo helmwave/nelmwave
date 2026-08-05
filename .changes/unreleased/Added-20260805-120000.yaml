@@ -1,0 +1,8 @@
+kind: Added
+body: GitHub Actions CI — lint, race-enabled tests on Linux and macOS, example
+  builds, an e2e run against the k3s fixture, govulncheck and gosec — plus a
+  changie-driven goreleaser release pipeline publishing binaries, a ghcr.io image
+  and a Homebrew formula
+time: 2026-08-05T12:00:00.000000000+03:00
+custom:
+    Author: zhilyaev

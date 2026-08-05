@@ -1,0 +1,10 @@
+kind: Added
+body: >-
+  `oci+http://` as a repository scheme for registries without TLS. nelm accepts only
+  `oci://`, so the reference is rewritten and the transport passed along separately —
+  you never spell the scheme twice, and a chart addressed as `oci://registry:5000/api`
+  still resolves against the `oci+http://` registry because the scheme is transport,
+  not identity
+time: 2026-08-05T01:50:00.000000000+03:00
+custom:
+    Author: zhilyaev

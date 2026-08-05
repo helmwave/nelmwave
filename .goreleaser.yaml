@@ -1,0 +1,197 @@
+# goreleaser builds every release artifact. Release notes come from changie
+# (.changes/<version>.md, passed via --release-notes), so the changelog section
+# below is disabled on purpose — there is exactly one source of truth for what
+# changed, and it is reviewed in the release PR before the tag exists.
+#
+# Validate locally without publishing anything:
+#   goreleaser check
+#   goreleaser release --snapshot --clean
+version: 2
+project_name: nelmwave
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: nelmwave
+    main: ./cmd/nelmwave
+    binary: nelmwave
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # Mirrors the -ldflags in the Makefile: internal/version is stamped, never
+    # read from git at runtime. BUILD_DATE is the commit date (`git log -1
+    # --format=%cs`) so two builds of the same commit agree; the fallback keeps
+    # `goreleaser release --snapshot` working with no environment at all.
+    ldflags:
+      - -s -w
+      - -X github.com/helmwave/nelmwave/internal/version.Version={{ .Version }}
+      - -X github.com/helmwave/nelmwave/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/helmwave/nelmwave/internal/version.Date={{ envOrDefault "BUILD_DATE" "unknown" }}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: nelmwave
+    ids:
+      - nelmwave
+    formats:
+      - tar.gz
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      # A glob, not a plain path: a literal `CHANGELOG.md` that does not exist
+      # aborts the whole run ("globbing failed for pattern CHANGELOG.md"), and it
+      # does not exist until the first release PR batches it. The glob includes
+      # the file when it is there and stays quiet when it is not — which is what
+      # keeps `goreleaser release --snapshot` usable on a fresh checkout.
+      - CHANGELOG*
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  # Hyphen, not the semver-correct `+`: this version becomes a docker tag, and
+  # `+` is not a legal character in one ("invalid reference format"). A real
+  # release never goes through here — its version comes from the git tag.
+  version_template: '{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}'
+
+changelog:
+  disable: true
+
+# dockers_v2 builds one multi-platform image and pushes the manifest itself — it
+# replaces the old per-arch `dockers` + `docker_manifests` pair, which goreleaser
+# now reports as deprecated. It needs buildx and QEMU, both set up in the release
+# workflow.
+dockers_v2:
+  # The default flavour: alpine, a shell, and a writable /tmp — everything the
+  # OCI chart resolution path needs.
+  #
+  # A prerelease publishes its exact version three times over rather than moving
+  # `latest`: `docker pull nelmwave` must never land on an rc. The duplicate is a
+  # no-op, and it keeps every template non-empty — an empty tag is a build error,
+  # not a skip.
+  - id: alpine
+    ids:
+      - nelmwave
+    dockerfile: Dockerfile
+    images:
+      - ghcr.io/helmwave/nelmwave
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    flags:
+      - --target=goreleaser
+    tags:
+      - '{{ .Version }}'
+      - '{{ if .Prerelease }}{{ .Version }}{{ else }}{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if .Prerelease }}{{ .Version }}{{ else }}latest{{ end }}'
+    labels: &image_labels
+      org.opencontainers.image.title: '{{ .ProjectName }}'
+      org.opencontainers.image.description: Declarative release orchestrator on top of nelm
+      org.opencontainers.image.url: https://github.com/helmwave/nelmwave
+      org.opencontainers.image.source: https://github.com/helmwave/nelmwave
+      org.opencontainers.image.version: '{{ .Version }}'
+      org.opencontainers.image.revision: '{{ .FullCommit }}'
+      org.opencontainers.image.created: '{{ .Date }}'
+
+  # bash, jq and kubectl on top of the default flavour, for poking at a release
+  # from inside a CI pod. Runs as root, unlike the other two.
+  - id: debug
+    ids:
+      - nelmwave
+    dockerfile: Dockerfile
+    images:
+      - ghcr.io/helmwave/nelmwave
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    flags:
+      - --target=debug-goreleaser
+    tags:
+      - '{{ .Version }}-debug'
+      - '{{ if .Prerelease }}{{ .Version }}-debug{{ else }}latest-debug{{ end }}'
+    labels: *image_labels
+
+  # No shell, no package manager, no libc. /tmp is carried in explicitly because
+  # scratch has no directories of its own.
+  - id: scratch
+    ids:
+      - nelmwave
+    dockerfile: Dockerfile
+    images:
+      - ghcr.io/helmwave/nelmwave
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    flags:
+      - --target=scratch-goreleaser
+    tags:
+      - '{{ .Version }}-scratch'
+      - '{{ if .Prerelease }}{{ .Version }}-scratch{{ else }}latest-scratch{{ end }}'
+    labels: *image_labels
+
+# A formula, not a cask, and deliberately so: helmwave/homebrew-tap already holds
+# Formula/helmwave.rb with both on_macos and on_linux blocks, and Homebrew Cask
+# does not exist on Linux — a cask would silently drop every Linux brew user and
+# leave the tap with two different mechanisms for two sibling tools.
+#
+# goreleaser reports `brews` as deprecated in favour of `homebrew_casks`. That is
+# accepted here: the goreleaser major is pinned (`~> v2` in the release workflow),
+# so the removal in v3 cannot break a release without a deliberate bump, and the
+# `release config` job in ci.yml tolerates this one deprecation while still
+# failing on an invalid config. Revisit when casks work on Linux.
+#
+# Pushing to helmwave/homebrew-tap needs a token that reaches another repository;
+# GITHUB_TOKEN is scoped to this one. Without HOMEBREW_TAP_TOKEN the upload is
+# skipped instead of failing the release.
+brews:
+  - name: nelmwave
+    ids:
+      - nelmwave
+    repository:
+      owner: helmwave
+      name: homebrew-tap
+      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+    directory: Formula
+    homepage: https://github.com/helmwave/nelmwave
+    description: Declarative release orchestrator on top of nelm
+    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_TOKEN" "" }}auto{{ else }}true{{ end }}'
+    commit_author:
+      name: github-actions[bot]
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    # Matches Formula/helmwave.rb, which ships completions the same way.
+    extra_install: |
+      generate_completions_from_executable(bin/"nelmwave", "completion", shells: [:bash, :zsh, :fish])
+    # There is no `nelmwave version` subcommand — the root command carries the
+    # flag — so this is what `brew test nelmwave` can actually run.
+    test: |
+      system "#{bin}/nelmwave", "--version"
+
+release:
+  github:
+    owner: helmwave
+    name: nelmwave
+  # A tag like v0.2.0-rc.1 is published as a prerelease automatically.
+  prerelease: auto
+  # Re-running the release workflow for the same tag replaces its assets instead
+  # of erroring out half-way through.
+  mode: replace
+  footer: |
+    ---
+
+    Full changelog: [CHANGELOG.md](https://github.com/helmwave/nelmwave/blob/{{ .Tag }}/CHANGELOG.md)
+
+    Container image: `ghcr.io/helmwave/nelmwave:{{ .Version }}`

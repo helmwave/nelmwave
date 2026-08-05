@@ -1,0 +1,282 @@
+# Everything that must be true of main, checked on every pull request and on
+# every push to main. Trunk-based development lives or dies by this file: short
+# branches merge fast only when "green" is a complete statement about the trunk.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# A force-push to a PR branch makes the previous run irrelevant. main is never
+# cancelled: every trunk commit gets a verdict of its own.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Modules are fetched from proxy.golang.org and verified against sum.golang.org
+  # by default; spelled out so a runner-side default can never quietly relax it.
+  GOFLAGS: -mod=readonly
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # The linter set and its settings are pinned in .golangci.yml; only the
+      # binary version is decided here. golangci-lint v2 is required — the config
+      # file declares `version: "2"`.
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+
+      - name: gofmt and goimports are enforced by golangci-lint formatters
+        run: golangci-lint fmt --diff
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux and macOS only: the release ships a windows binary, but nothing
+        # in the suite has ever been exercised there. Add windows-latest to this
+        # list the day someone is willing to keep it green.
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # -race matters here specifically: graph.Run is a concurrent DAG executor,
+      # and artifact resolution is sequential only because gomplate is unsafe —
+      # both are the kind of invariant a race detector defends.
+      # -count=1 defeats the test cache, so a green run means the tests actually ran.
+      - name: go test
+        run: go test -race -count=1 -timeout 10m ./...
+
+      - name: go vet
+        run: go vet ./...
+
+  examples:
+    name: examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # `make examples` builds every examples/*/nelmwave.yml.tpl with the real
+      # binary. It needs no cluster, and it is the only thing that catches schema
+      # drift between the code and the documented manifests.
+      - name: make examples
+        run: make examples
+
+  e2e:
+    name: e2e (k3s)
+    runs-on: ubuntu-latest
+    # The suite talks to a real API server; 20m is the go test timeout in the
+    # Makefile, so give the job enough room to report rather than be killed.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # The runner ships Compose v2 as a docker plugin; there is no
+      # `docker-compose` binary, which is what the Makefile defaults to.
+      - name: start the k3s fixture
+        run: make e2e-up COMPOSE="docker compose"
+
+      - name: run the e2e suite
+        run: make e2e-test
+
+      # k3s logs are the only way to tell "nelmwave is broken" from "the fixture
+      # never came up", and they are gone once the job ends.
+      - name: k3s logs
+        if: failure()
+        run: docker compose -f test/e2e/docker-compose.yml logs --no-color
+
+      - name: tear down
+        if: always()
+        run: make e2e-down COMPOSE="docker compose"
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      # Fails on any *newly* reachable vulnerability. The ones already known —
+      # they come in through the load-bearing `replace` pins in go.mod — are
+      # listed in .github/govulncheck-allow.txt with a reason each, so this gate
+      # stays meaningful instead of being permanently red or permanently off.
+      - name: govulncheck
+        run: |
+          set -o pipefail
+          govulncheck -format json ./... > govulncheck.json || true
+
+          jq -r 'select(has("finding"))
+                 | .finding
+                 | select(.trace[0].function != null)
+                 | .osv' govulncheck.json | sort -u > called.txt
+
+          grep -vE '^\s*(#|$)' .github/govulncheck-allow.txt | sort -u > allowed.txt
+
+          if ! new=$(comm -23 called.txt allowed.txt) || [ -n "$new" ]; then
+            echo "::error::new reachable vulnerabilities: $(echo "$new" | tr '\n' ' ')"
+            echo
+            echo "Fix them, or — if the fix is blocked by a replace pin in go.mod —"
+            echo "add the ID to .github/govulncheck-allow.txt with a reason."
+            govulncheck ./... || true
+            exit 1
+          fi
+
+          echo "reachable vulnerabilities, all accounted for:"
+          cat called.txt
+
+      - name: install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      # G304 is what this tool does for a living: every path it opens comes from
+      # a manifest the user wrote. G301/G306 flag the 0644/0755 artifact and plan
+      # files written under .nelmwave/ — see the TODO in the repository issues
+      # before relaxing or removing these exclusions.
+      - name: gosec
+        run: |
+          gosec -severity medium -confidence medium \
+            -exclude=G304,G301,G306 \
+            -exclude-generated ./...
+
+  changelog:
+    name: changelog fragment
+    runs-on: ubuntu-latest
+    # Release PRs carry the batched changelog itself, and a PR can opt out with
+    # the `skip-changelog` label (typos, CI-only changes).
+    if: >-
+      github.event_name == 'pull_request'
+      && !startsWith(github.head_ref, 'release/')
+      && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: miniscruff/changie-action@v2
+        with:
+          version: latest
+          args: --version
+
+      # One fragment per PR keeps CHANGELOG.md conflict-free on a busy trunk;
+      # this is the check that keeps the habit from decaying.
+      - name: require a fragment in .changes/unreleased/
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          added=$(git diff --name-only --diff-filter=AM "$BASE_SHA" "$HEAD_SHA" \
+            | grep -E '^\.changes/unreleased/.+\.(yaml|yml)$' || true)
+
+          if [ -z "$added" ]; then
+            echo "::error::no changie fragment in this PR."
+            echo "Run \`changie new\` and commit the file it writes to .changes/unreleased/,"
+            echo "or add the \`skip-changelog\` label if this change needs no entry."
+            exit 1
+          fi
+
+          echo "fragments in this PR:"
+          echo "$added"
+
+      # Catches a hand-written fragment with a kind that does not exist or a
+      # malformed body — the failure would otherwise surface during the release.
+      - name: fragments batch cleanly
+        run: changie batch auto --dry-run > /dev/null
+
+  release-config:
+    name: release config
+    runs-on: ubuntu-latest
+    # The trunk variant builds six targets and three images.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # The release workflow runs only on a tag, when a broken .goreleaser.yaml
+      # costs a bad release. `check` validates the config and a single-target
+      # snapshot build proves the ldflags and the build matrix still work.
+      #
+      # `check` exits non-zero on deprecated properties as well as on invalid
+      # ones, and has no flag to separate the two. We knowingly use `brews`
+      # (see the comment on it in .goreleaser.yaml), so the verdict is taken from
+      # the message instead: "configuration is valid" is the pass condition, and
+      # anything else — a bad key, a broken template — still fails the job.
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          install-only: true
+
+      - name: goreleaser check
+        run: |
+          set -o pipefail
+          out=$(goreleaser check 2>&1) || true
+          echo "$out"
+
+          if ! grep -qE 'configuration file\(s\) validated|configuration is valid' <<<"$out"; then
+            echo "::error::.goreleaser.yaml is invalid"
+            exit 1
+          fi
+
+          if grep -q 'DEPRECATED' <<<"$out"; then
+            echo "::warning::.goreleaser.yaml uses deprecated properties (expected: brews)"
+          fi
+
+      # On a PR: one target, seconds, proves the build matrix and the ldflags.
+      - name: goreleaser build (pull request)
+        if: github.event_name == 'pull_request'
+        run: goreleaser build --snapshot --clean --single-target
+
+      # On the trunk: the whole thing except publishing. `build` never assembles
+      # archives or images, so it cannot catch a bad `archives.files` glob or a
+      # Dockerfile target that no longer exists — both of which would only
+      # surface during a real release. Slower, and it belongs here rather than on
+      # every PR.
+      - uses: docker/setup-qemu-action@v3
+        if: github.event_name == 'push'
+
+      - uses: docker/setup-buildx-action@v3
+        if: github.event_name == 'push'
+
+      - name: goreleaser release --snapshot (trunk)
+        if: github.event_name == 'push'
+        run: goreleaser release --snapshot --clean --skip=publish,sign,sbom

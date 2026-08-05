@@ -1,0 +1,10 @@
+kind: Added
+body: >-
+  Switches for how much `diff` prints: `--no-verbose-diffs`,
+  `--show-verbose-crd-diffs`, `--show-insignificant-diffs`, `--show-sensitive-diffs`
+  and `--diff-context-lines`. `diff --detailed-exitcode` reports planned changes as
+  exit code 2 without being a failure, and `up --dry-run` always plans with the
+  default view
+time: 2026-08-05T04:40:00.000000000+03:00
+custom:
+    Author: zhilyaev

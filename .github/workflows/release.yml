@@ -1,0 +1,130 @@
+# Step two of a release: the release PR landed on main, so tag that commit and
+# publish everything from it.
+#
+# Tagging and publishing are one job on purpose. A tag pushed with GITHUB_TOKEN
+# does not trigger workflows, so a separate tag-then-release pair would need a
+# PAT just to hand work to itself.
+name: release
+
+on:
+  push:
+    branches:
+      - main
+    # Only the release PR touches CHANGELOG.md — changie fragments live in
+    # .changes/unreleased/, and ordinary PRs never regenerate it.
+    paths:
+      - CHANGELOG.md
+  # Escape hatch: re-run a failed publish for whatever `changie latest` says.
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the tag and the GitHub release
+  packages: write # push to ghcr.io
+
+jobs:
+  release:
+    name: tag and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: miniscruff/changie-action@v2
+        with:
+          version: latest
+          args: --version
+
+      # The version comes from the batched changelog, never from a hand-typed
+      # tag: whatever was reviewed in the release PR is what gets published.
+      - name: resolve the version
+        id: version
+        run: |
+          set -euo pipefail
+
+          # Empty before the very first release-pr run, and on a workflow_dispatch
+          # against a trunk that has never been batched.
+          version=$(changie latest 2>/dev/null || true)
+          if [ -z "$version" ]; then
+            echo "::notice::no batched version in .changes/ yet; run the release-pr workflow first."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ ! -f ".changes/${version}.md" ]; then
+            echo "::error::.changes/${version}.md is missing — was the changelog batched?"
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
+            echo "::notice::${version} is already tagged; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          # Date only, taken from the commit, so rebuilding this tag stamps the
+          # same value — the same trick the Makefile documents.
+          echo "date=$(git log -1 --format=%cs)" >> "$GITHUB_OUTPUT"
+
+      - name: tag the commit
+        if: steps.version.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
+
+      # goreleaser reads the multi-arch images out of this builder.
+      - uses: docker/setup-qemu-action@v3
+        if: steps.version.outputs.skip == 'false'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.version.outputs.skip == 'false'
+
+      - uses: docker/login-action@v3
+        if: steps.version.outputs.skip == 'false'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: goreleaser release
+        if: steps.version.outputs.skip == 'false'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean --release-notes .changes/${{ steps.version.outputs.version }}.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: without it the Homebrew formula upload is skipped instead of
+          # failing the release (see brews.skip_upload in .goreleaser.yaml).
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          BUILD_DATE: ${{ steps.version.outputs.date }}
+
+      - name: summary
+        if: steps.version.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "## ${VERSION} published"
+            echo
+            echo "- [release notes](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${VERSION})"
+            echo "- \`docker pull ghcr.io/helmwave/nelmwave:${VERSION#v}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

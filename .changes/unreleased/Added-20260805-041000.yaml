@@ -1,0 +1,9 @@
+kind: Added
+body: >-
+  `driverURL` selecting where release state lives: `kubernetes://secrets` (the
+  default), `kubernetes://configmaps`, or PostgreSQL via `psql://user@host:5432/db`.
+  Leave the password out and let libpq read `PGPASSWORD`: `build` warns if it finds
+  one embedded, since the manifest is copied into `planfile.yml` in cleartext
+time: 2026-08-05T04:10:00.000000000+03:00
+custom:
+    Author: zhilyaev
