@@ -1,7 +1,0 @@
-kind: Added
-body: >-
-  Per-release `timeout` bounding the operation and `autoRollback` rolling back to the
-  last deployed revision on failure (helm's `--atomic`)
-time: 2026-08-05T03:50:00.000000000+03:00
-custom:
-    Author: zhilyaev

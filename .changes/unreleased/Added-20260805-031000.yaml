@@ -1,9 +1,0 @@
-kind: Added
-body: >-
-  A concurrent dependency-DAG executor: independent releases are applied in parallel
-  under `--concurrency`, a failure stops only its own branch while unrelated branches
-  keep running, and `down` reverses every edge so dependents are removed before what
-  they depend on
-time: 2026-08-05T03:10:00.000000000+03:00
-custom:
-    Author: zhilyaev

@@ -1,9 +1,0 @@
-kind: Added
-body: >-
-  Release identity as a **uniqname** map key — `name[@namespace[@kubecontext]]` — so a
-  release body carries no `name`/`namespace` fields and equivalent spellings collapse
-  to one release. Namespace and kube-context are optional and resolved at apply time.
-  A free-form `project:` name is carried into the plan
-time: 2026-08-05T01:30:00.000000000+03:00
-custom:
-    Author: zhilyaev

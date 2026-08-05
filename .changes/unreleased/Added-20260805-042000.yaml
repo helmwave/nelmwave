@@ -1,8 +1,0 @@
-kind: Added
-body: >-
-  Top-level `Release:` and `Namespace:` blocks as type defaults applied to every
-  release: maps deep-merge with a release's own keys winning, lists are replaced
-  rather than merged
-time: 2026-08-05T04:20:00.000000000+03:00
-custom:
-    Author: zhilyaev

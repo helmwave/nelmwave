@@ -1,9 +1,0 @@
-kind: Added
-body: >-
-  `labels` on releases, used for `-l/--selector` selection and label-based `needs`,
-  with values coerced to strings. The same labels are written onto the release's
-  storage object, so `kubectl get secret -l app=api` finds it in the cluster; helm's
-  own `name`, `owner`, `status` and `version` are applied afterwards and win
-time: 2026-08-05T03:20:00.000000000+03:00
-custom:
-    Author: zhilyaev

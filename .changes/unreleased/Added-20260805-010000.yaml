@@ -1,9 +1,0 @@
-kind: Added
-body: >-
-  A declarative manifest (`nelmwave.yml` or a gomplate-rendered `nelmwave.yml.tpl`)
-  describing many Helm releases at once, applied through
-  [nelm](https://github.com/werf/nelm) by four commands: `build`, `up`, `down` and
-  `diff` (alias `plan`)
-time: 2026-08-05T01:00:00.000000000+03:00
-custom:
-    Author: zhilyaev
