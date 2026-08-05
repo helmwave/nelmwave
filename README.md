@@ -34,7 +34,10 @@ cat .nelmwave/planfile.yml
 resolves everything locally into `.nelmwave/`. `up`, `down` and `diff` need a
 Kubernetes cluster.
 
-See [`examples/`](./examples) for runnable projects.
+[`examples/`](./examples) has a runnable project per feature area — dependencies,
+chart sources, namespaces, resource policies, release storage, sops-encrypted
+values, datasource cross-references, and running in CI. `make examples` builds
+them all.
 
 ---
 

@@ -34,7 +34,7 @@ LDFLAGS := -X $(VERSION_PKG).Version=$(VERSION) \
            -X $(VERSION_PKG).Commit=$(COMMIT) \
            -X $(VERSION_PKG).Date=$(DATE)
 
-.PHONY: build test lint e2e e2e-up e2e-test e2e-down version
+.PHONY: build test lint examples e2e e2e-up e2e-test e2e-down version
 
 build:
 	go build -ldflags '$(LDFLAGS)' ./cmd/nelmwave
@@ -50,6 +50,16 @@ test:
 
 lint:
 	golangci-lint run ./...
+
+## examples: build every example, so a schema change cannot leave them stale.
+## Needs no cluster: charts are local and repositories are only recorded.
+examples: build
+	@set -e; for dir in examples/*/; do \
+		[ -f "$$dir/nelmwave.yml.tpl" ] || continue; \
+		echo "== $$dir"; \
+		( cd "$$dir" && ENV=stg SOPS_AGE_KEY_FILE=age.key \
+			$(CURDIR)/nelmwave build --log-level warn ); \
+	done
 
 ## e2e: bring the cluster up, run the suite, tear it down (even on failure).
 e2e:
