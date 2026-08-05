@@ -35,9 +35,23 @@ type Spec struct {
 	RepoSkipTLS   bool
 	RepoPassCreds bool
 	RepoCAFile    string
+	// RepoCertFile / RepoKeyFile are the client certificate for mTLS to the
+	// repository; RepoOCIPlainHTTP drops TLS altogether (http:// registries).
+	RepoCertFile     string
+	RepoKeyFile      string
+	RepoOCIPlainHTTP bool
+	// RepoSkipUpdate stops the chart's declared dependencies from being
+	// refreshed before they are pulled.
+	RepoSkipUpdate bool
+	// RepoRequestTimeout bounds a single request to the repository (0 = none).
+	RepoRequestTimeout time.Duration
 	// RegistryConfigPath is a Docker config.json with OCI registry credentials
 	// (empty falls back to nelm's default, ~/.docker/config.json).
 	RegistryConfigPath string
+	// ProvenanceStrategy / ProvenanceKeyring control verification of the chart's
+	// PGP signature. Empty strategy leaves nelm's default ("never").
+	ProvenanceStrategy string
+	ProvenanceKeyring  string
 
 	// Timeout bounds the operation (0 = no timeout).
 	Timeout time.Duration
@@ -54,6 +68,57 @@ type Spec struct {
 	NamespaceLabels      map[string]string
 	// AutoRollback rolls back to the last deployed revision on failure (install only).
 	AutoRollback bool
+
+	// ForceAdoption takes over resources claimed by another Helm release.
+	ForceAdoption bool
+	// RemoveManualChanges reclaims manually added fields (nelm's
+	// NoRemoveManualChanges = !RemoveManualChanges).
+	RemoveManualChanges bool
+	// InstallCRDs installs the chart's crds/ directory (nelm's
+	// NoInstallStandaloneCRDs = !InstallCRDs).
+	InstallCRDs bool
+	// DeletePropagation is the default deletion strategy (empty = nelm's
+	// Foreground).
+	DeletePropagation string
+	// HistoryLimit caps stored revisions (0 = nelm's default of 10).
+	HistoryLimit int
+}
+
+// DiffOptions control how planned changes are rendered. They describe the
+// view, not the release, so they come from the command line rather than the
+// manifest.
+type DiffOptions struct {
+	// ShowVerbose prints the whole manifest of a resource that is created or
+	// deleted outright, instead of a "<hidden verbose changes>" placeholder.
+	// nelm's own CLI defaults this to true; DefaultDiffOptions matches it.
+	ShowVerbose bool
+	// ShowVerboseCRD does the same for CRDs, which are kept separate because
+	// their manifests are large enough to drown the rest of the diff.
+	ShowVerboseCRD bool
+	// ShowInsignificant keeps helm.sh/werf.io annotations and managedFields in
+	// the compared manifests. Without it a change confined to them shows up as
+	// "<hidden insignificant changes>".
+	ShowInsignificant bool
+	// ShowSensitive prints the contents of Secrets and resources marked
+	// werf.io/sensitive in the clear. Local debugging only — this lands in CI
+	// logs otherwise.
+	ShowSensitive bool
+	// ContextLines is the unified-diff context size (0 leaves nelm's 3).
+	ContextLines int
+}
+
+// DefaultDiffOptions is the view nelm's CLI shows by default.
+func DefaultDiffOptions() DiffOptions {
+	return DiffOptions{ShowVerbose: true}
+}
+
+// PlanOptions are the per-invocation knobs of Plan.
+type PlanOptions struct {
+	// ErrorIfChanges makes Plan report planned changes through its changed
+	// return value instead of letting nelm turn them into an error.
+	ErrorIfChanges bool
+	// Diff controls how the changes are rendered.
+	Diff DiffOptions
 }
 
 // Applier installs, uninstalls and plans releases through a deploy engine.
@@ -61,7 +126,5 @@ type Applier interface {
 	Install(ctx context.Context, s Spec) error
 	Uninstall(ctx context.Context, s Spec) error
 	// Plan computes the changes an install would make, without applying them.
-	// When errorIfChanges is set, it reports whether any changes are planned via
-	// the returned changed flag (instead of as an error).
-	Plan(ctx context.Context, s Spec, errorIfChanges bool) (changed bool, err error)
+	Plan(ctx context.Context, s Spec, o PlanOptions) (changed bool, err error)
 }

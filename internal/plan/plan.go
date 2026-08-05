@@ -64,6 +64,13 @@ type Release struct {
 	// AutoRollback rolls back to the last deployed revision on failure.
 	AutoRollback bool `yaml:"autoRollback,omitempty"`
 
+	// Resource-handling policies, mirroring config.Release.
+	ForceAdoption       bool   `yaml:"forceAdoption,omitempty"`
+	RemoveManualChanges bool   `yaml:"removeManualChanges"`
+	InstallCRDs         bool   `yaml:"installCRDs"`
+	DeletePropagation   string `yaml:"deletePropagation,omitempty"`
+	HistoryLimit        int    `yaml:"historyLimit,omitempty"`
+
 	// ValuesFiles are the plan-relative paths to the resolved values files, in
 	// precedence order (lowest first: global values, then per-release). They are
 	// passed to nelm as-is; nelm performs the ordered Helm-style merge.
@@ -79,15 +86,20 @@ func FromConfig(cfg *config.Config) *Plan {
 	}
 	for name, r := range cfg.Releases {
 		p.Releases[name] = Release{
-			Labels:       r.Labels,
-			Needs:        resolveNeeds(cfg, name, r),
-			Chart:        r.Chart,
-			Values:       r.Values,
-			Sets:         r.Sets,
-			Stores:       r.Stores,
-			Namespace:    r.Namespace,
-			Timeout:      r.Timeout,
-			AutoRollback: r.AutoRollback,
+			Labels:              r.Labels,
+			Needs:               resolveNeeds(cfg, name, r),
+			Chart:               r.Chart,
+			Values:              r.Values,
+			Sets:                r.Sets,
+			Stores:              r.Stores,
+			Namespace:           r.Namespace,
+			Timeout:             r.Timeout,
+			AutoRollback:        r.AutoRollback,
+			ForceAdoption:       r.ForceAdoption,
+			RemoveManualChanges: r.RemoveManualChanges,
+			InstallCRDs:         r.InstallCRDs,
+			DeletePropagation:   r.DeletePropagation,
+			HistoryLimit:        r.HistoryLimit,
 		}
 	}
 	return p

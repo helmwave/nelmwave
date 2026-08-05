@@ -23,34 +23,89 @@ type ChartResolution struct {
 	// via a Docker config.json instead (see DockerConfig).
 	Username string
 	Password string
-	// TLS / credential-passing knobs for helm repos.
-	SkipTLSVerify   bool
+	// PassCredentials forwards basic auth beyond the repo host. Helm repos only:
+	// OCI never sees Username/Password here.
 	PassCredentials bool
-	CAFile          string
+	// Transport and verification settings of the repository the chart comes
+	// from. These apply to OCI too: nelm downloads both kinds of chart through
+	// the same helm getter, so the TLS material and timeout are shared.
+	SkipTLSVerify      bool
+	CAFile             string
+	CertFile           string
+	KeyFile            string
+	OCIPlainHTTP       bool
+	SkipUpdate         bool
+	RequestTimeout     string
+	ProvenanceStrategy string
+	ProvenanceKeyring  string
+}
+
+// transport copies the settings that describe how to reach a repository, as
+// opposed to who we log in as. Shared by the helm-repo and OCI paths.
+func (c *ChartResolution) transport(r config.Repository) {
+	c.SkipTLSVerify = r.InsecureSkipTLSVerify
+	c.CAFile = r.CAFile
+	c.CertFile = r.CertFile
+	c.KeyFile = r.KeyFile
+	c.OCIPlainHTTP = r.OCIPlainHTTP
+	c.SkipUpdate = r.SkipUpdate
+	c.RequestTimeout = r.RequestTimeout
+	c.ProvenanceStrategy = r.ProvenanceStrategy
+	c.ProvenanceKeyring = r.ProvenanceKeyring
 }
 
 // Resolve maps chartName plus the declared repositories to a ChartResolution:
-//   - oci://host/... -> OCI (Ref = full URL); credentials come from a matching
-//     repository via DockerConfig, not from ChartResolution.
+//   - oci://host/... -> OCI (Ref = full URL); the registry is found by URL
+//     prefix and contributes its transport settings. Credentials are the
+//     exception: they reach nelm through a Docker config.json (see DockerConfig).
 //   - alias/chart, where alias is a declared helm repo -> Ref = chart name,
-//     RepoURL + auth from that repository.
+//     RepoURL + auth + transport from that repository.
 //   - anything else -> passed through unchanged (local path or bare name).
 func Resolve(chartName string, repos map[string]config.Repository) ChartResolution {
+	res := ChartResolution{Ref: chartName}
 	if strings.HasPrefix(chartName, "oci://") {
-		return ChartResolution{Ref: chartName}
+		if r, found := matchOCI(chartName, repos); found {
+			res.transport(r)
+		}
+		return res
 	}
 	if alias, chart, ok := strings.Cut(chartName, "/"); ok {
 		if r, found := repos[alias]; found && !r.IsOCI() {
-			return ChartResolution{
-				Ref:             chart,
-				RepoURL:         r.URL,
-				Username:        r.Username,
-				Password:        r.Password,
-				SkipTLSVerify:   r.InsecureSkipTLSVerify,
-				PassCredentials: r.PassCredentials,
-				CAFile:          r.CAFile,
-			}
+			res.Ref = chart
+			res.RepoURL = r.URL
+			res.Username = r.Username
+			res.Password = r.Password
+			res.PassCredentials = r.PassCredentials
+			res.transport(r)
+			return res
 		}
 	}
-	return ChartResolution{Ref: chartName}
+	return res
+}
+
+// matchOCI finds the declared OCI repository an oci:// chart reference belongs
+// to. An OCI chart is addressed by its full URL rather than by an alias, so the
+// repository is found by URL prefix. The longest match wins, so a repository
+// declared as oci://ghcr.io/acme beats a broader oci://ghcr.io; ties are broken
+// by name, since map iteration order is not stable.
+func matchOCI(chartName string, repos map[string]config.Repository) (config.Repository, bool) {
+	var best config.Repository
+	var bestName string
+	found := false
+	for name, r := range repos {
+		if !r.IsOCI() {
+			continue
+		}
+		prefix := strings.TrimSuffix(r.URL, "/")
+		if chartName != prefix && !strings.HasPrefix(chartName, prefix+"/") {
+			continue
+		}
+		switch {
+		case !found, len(prefix) > len(strings.TrimSuffix(best.URL, "/")):
+			best, bestName, found = r, name, true
+		case len(prefix) == len(strings.TrimSuffix(best.URL, "/")) && name < bestName:
+			best, bestName = r, name
+		}
+	}
+	return best, found
 }

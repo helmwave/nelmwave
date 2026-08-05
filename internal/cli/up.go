@@ -88,6 +88,9 @@ func runUp(cmd *cobra.Command, g *globalOptions, o *upOptions) error {
 		includeNeeds: o.includeNeeds,
 		kubeContext:  g.kubeContext,
 		kubeConfig:   g.kubeConfig,
+		// --dry-run plans; the diff view is not configurable from up, so it
+		// gets the same defaults nelm's CLI uses. Tune it with nelmwave diff.
+		diff: release.DefaultDiffOptions(),
 	}
 
 	// --dry-run plans instead of applying.

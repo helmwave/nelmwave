@@ -34,7 +34,31 @@ type Release struct {
 	// AutoRollback rolls back to the last deployed revision on failure
 	// (nelm AutoRollback, akin to helm --atomic).
 	AutoRollback bool `json:"autoRollback" yaml:"autoRollback,omitempty"`
+
+	// ForceAdoption takes over a resource that another Helm release claims via
+	// meta.helm.sh/release-name. Without it nelm refuses to touch it, which is
+	// what you want everywhere except migrations and release renames.
+	ForceAdoption bool `json:"forceAdoption" yaml:"forceAdoption,omitempty"`
+	// RemoveManualChanges reclaims fields added to a resource by hand (kubectl
+	// edit) that the manifest does not mention. On by default, as in nelm; set
+	// it to false to leave such fields alone.
+	RemoveManualChanges bool `json:"removeManualChanges" yaml:"removeManualChanges" default:"true"`
+	// InstallCRDs installs the CRDs shipped in the chart's crds/ directory. On
+	// by default; turn it off where CRDs are managed by a separate pipeline.
+	InstallCRDs bool `json:"installCRDs" yaml:"installCRDs" default:"true"`
+	// DeletePropagation is the default deletion strategy for this release's
+	// resources: Foreground (nelm's default), Background or Orphan. A single
+	// resource can still override it with werf.io/delete-propagation.
+	DeletePropagation string `json:"deletePropagation" yaml:"deletePropagation,omitempty"`
+	// HistoryLimit caps how many revisions of this release are kept in storage.
+	// 0 leaves nelm's default of 10.
+	HistoryLimit int `json:"historyLimit" yaml:"historyLimit,omitempty"`
 }
+
+// DeletePropagations are the values DeletePropagation accepts. They are
+// Kubernetes' own DeletionPropagation values and are case-sensitive: nelm casts
+// the string straight to metav1.DeletionPropagation without checking it.
+var DeletePropagations = []string{"Foreground", "Background", "Orphan"}
 
 // Namespace holds the settings for a release's namespace. The namespace *name*
 // is part of the release key ("api@production"), never a field here.

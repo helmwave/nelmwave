@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
+	"time"
 )
 
 // Validate checks a parsed Config for structural correctness:
@@ -20,8 +22,23 @@ func Validate(cfg *Config) error {
 	var errs []error
 
 	for _, name := range sortedStringKeys(cfg.Repositories) {
-		if cfg.Repositories[name].URL == "" {
+		repo := cfg.Repositories[name]
+		if repo.URL == "" {
 			errs = append(errs, fmt.Errorf("repository %q: url is required", name))
+		}
+		if err := validateProvenanceStrategy(name, repo); err != nil {
+			errs = append(errs, err)
+		}
+		if repo.OCIPlainHTTP && !repo.IsOCI() {
+			errs = append(errs, fmt.Errorf(
+				"repository %q: oci_plain_http only applies to oci:// registries; "+
+					"for a helm repository write the scheme in the url instead (http://...)", name))
+		}
+		if repo.RequestTimeout != "" {
+			if _, err := time.ParseDuration(repo.RequestTimeout); err != nil {
+				errs = append(errs, fmt.Errorf("repository %q: invalid request_timeout %q: %w",
+					name, repo.RequestTimeout, err))
+			}
 		}
 	}
 
@@ -31,6 +48,9 @@ func Validate(cfg *Config) error {
 			errs = append(errs, err)
 		}
 		if err := validateLabels(key, r.Labels); err != nil {
+			errs = append(errs, err)
+		}
+		if err := validateDeletePropagation(key, r); err != nil {
 			errs = append(errs, err)
 		}
 		errs = append(errs, validateNeeds(cfg, key, r)...)
@@ -76,6 +96,39 @@ func sortedStringKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// validateProvenanceStrategy rejects a strategy nelm does not know. This has to
+// be caught at build time: nelm hands the string to helm's downloader, which
+// panics on an unknown value rather than returning an error, so a typo would
+// otherwise take the process down mid-apply.
+func validateProvenanceStrategy(name string, r Repository) error {
+	if r.ProvenanceStrategy == "" {
+		return nil
+	}
+	for _, s := range ProvenanceStrategies {
+		if r.ProvenanceStrategy == s {
+			return nil
+		}
+	}
+	return fmt.Errorf("repository %q: unknown provenance_strategy %q (want one of %s)",
+		name, r.ProvenanceStrategy, strings.Join(ProvenanceStrategies, ", "))
+}
+
+// validateDeletePropagation rejects a strategy Kubernetes does not know. nelm
+// casts the string straight to metav1.DeletionPropagation without validating
+// it, so a lowercase "foreground" would travel all the way to the API server.
+func validateDeletePropagation(key string, r Release) error {
+	if r.DeletePropagation == "" {
+		return nil
+	}
+	for _, p := range DeletePropagations {
+		if r.DeletePropagation == p {
+			return nil
+		}
+	}
+	return fmt.Errorf("release %q: unknown deletePropagation %q (want one of %s; case-sensitive)",
+		key, r.DeletePropagation, strings.Join(DeletePropagations, ", "))
 }
 
 func validateChartSource(name string, r Release) error {

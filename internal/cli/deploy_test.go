@@ -23,6 +23,8 @@ type fakeApplier struct {
 	planned     []string
 	sets        map[string][]string
 	deleteNS    map[string]bool
+	specs       map[string]release.Spec
+	planOpts    release.PlanOptions
 	fail        map[string]error
 	changes     map[string]bool // release name -> has planned changes
 }
@@ -35,6 +37,10 @@ func (f *fakeApplier) Install(_ context.Context, s release.Spec) error {
 		f.sets = map[string][]string{}
 	}
 	f.sets[s.Name] = s.SetJSON
+	if f.specs == nil {
+		f.specs = map[string]release.Spec{}
+	}
+	f.specs[s.Name] = s
 	return f.fail[s.Name]
 }
 
@@ -49,14 +55,15 @@ func (f *fakeApplier) Uninstall(_ context.Context, s release.Spec) error {
 	return f.fail[s.Name]
 }
 
-func (f *fakeApplier) Plan(_ context.Context, s release.Spec, errorIfChanges bool) (bool, error) {
+func (f *fakeApplier) Plan(_ context.Context, s release.Spec, o release.PlanOptions) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.planned = append(f.planned, s.Name)
+	f.planOpts = o
 	if err := f.fail[s.Name]; err != nil {
 		return false, err
 	}
-	return errorIfChanges && f.changes[s.Name], nil
+	return o.ErrorIfChanges && f.changes[s.Name], nil
 }
 
 // a@ns (no needs) and b@ns (needs a@ns, required or optional).
@@ -276,6 +283,63 @@ func TestSetJSONArgs_NestedMapsAndTypes(t *testing.T) {
 		if args[i] != want[i] {
 			t.Errorf("arg[%d] = %q, want %q", i, args[i], want[i])
 		}
+	}
+}
+
+func TestDeploy_ResourcePoliciesReachTheApplier(t *testing.T) {
+	p := &plan.Plan{
+		Releases: map[string]plan.Release{
+			"a@ns": {
+				Chart:               config.Chart{Name: "r/a"},
+				Namespace:           config.Namespace{Create: true},
+				ForceAdoption:       true,
+				RemoveManualChanges: false,
+				InstallCRDs:         true,
+				DeletePropagation:   "Background",
+				HistoryLimit:        5,
+			},
+		},
+	}
+	f := &fakeApplier{}
+	if err := deploy(context.Background(), zap.NewNop(), p, opts("", false), f, opInstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	got := f.specs["a"]
+	if !got.ForceAdoption || got.RemoveManualChanges || !got.InstallCRDs ||
+		got.DeletePropagation != "Background" || got.HistoryLimit != 5 {
+		t.Errorf("policies did not reach the spec: %+v", got)
+	}
+}
+
+func TestDiff_RenderingOptionsReachTheApplier(t *testing.T) {
+	o := opts("", false)
+	o.diff = release.DiffOptions{
+		ShowVerbose:       true,
+		ShowVerboseCRD:    true,
+		ShowInsignificant: true,
+		ShowSensitive:     true,
+		ContextLines:      7,
+	}
+	f := &fakeApplier{}
+	if err := diffReleases(context.Background(), zap.NewNop(), testPlan(false), o, false, f); err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	if f.planOpts.Diff != o.diff {
+		t.Errorf("diff options = %+v, want %+v", f.planOpts.Diff, o.diff)
+	}
+}
+
+// up --dry-run has no flags of its own, so it must not silently plan with a
+// narrower view than nelm's CLI would show.
+func TestUp_DryRunUsesNelmDefaultDiffView(t *testing.T) {
+	f := &fakeApplier{}
+	o := opts("", false)
+	o.diff = release.DefaultDiffOptions()
+	if err := diffReleases(context.Background(), zap.NewNop(), testPlan(false), o, false, f); err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	if !f.planOpts.Diff.ShowVerbose {
+		t.Error("verbose diffs must be on by default, as in nelm's CLI")
 	}
 }
 

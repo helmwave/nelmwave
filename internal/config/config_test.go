@@ -82,6 +82,152 @@ releases:
 	}
 }
 
+// A bad strategy must be caught here: helm's downloader panics on an unknown
+// value instead of erroring, so an unvalidated typo would surface as a crash
+// halfway through an apply.
+func TestValidate_ProvenanceStrategy(t *testing.T) {
+	cfg := mustParseValid(t, `
+repositories:
+  bad:
+    url: https://charts.example.com
+    provenance_strategy: alwais
+releases:
+  a: { chart: { name: bad/a } }
+`)
+	err := Validate(cfg)
+	if err == nil || !strings.Contains(err.Error(), "unknown provenance_strategy") {
+		t.Fatalf("expected provenance_strategy error, got: %v", err)
+	}
+
+	for _, s := range append([]string{""}, ProvenanceStrategies...) {
+		cfg := mustParseValid(t, `
+repositories:
+  ok:
+    url: https://charts.example.com
+    provenance_strategy: `+s+`
+releases:
+  a: { chart: { name: ok/a } }
+`)
+		if err := Validate(cfg); err != nil {
+			t.Errorf("strategy %q should be accepted, got %v", s, err)
+		}
+	}
+}
+
+// The two policies nelmwave states positively must default to nelm's behaviour,
+// since nelm spells them as negations (NoRemoveManualChanges, NoInstallCRDs).
+func TestParse_ResourcePolicyDefaults(t *testing.T) {
+	cfg := mustParseValid(t, `
+releases:
+  a: { chart: { name: r/a } }
+  b:
+    chart: { name: r/b }
+    removeManualChanges: false
+    installCRDs: false
+    forceAdoption: true
+    deletePropagation: Orphan
+    historyLimit: 3
+`)
+	a := cfg.Releases["a"]
+	if !a.RemoveManualChanges || !a.InstallCRDs {
+		t.Errorf("removeManualChanges and installCRDs must default to true, got %+v", a)
+	}
+	if a.ForceAdoption || a.DeletePropagation != "" || a.HistoryLimit != 0 {
+		t.Errorf("release a picked up unexpected policies: %+v", a)
+	}
+
+	b := cfg.Releases["b"]
+	if b.RemoveManualChanges || b.InstallCRDs {
+		t.Errorf("explicit false must survive the default:\"true\" tag, got %+v", b)
+	}
+	if !b.ForceAdoption || b.DeletePropagation != "Orphan" || b.HistoryLimit != 3 {
+		t.Errorf("policies not parsed: %+v", b)
+	}
+	if err := Validate(cfg); err != nil {
+		t.Errorf("expected valid, got %v", err)
+	}
+}
+
+// nelm casts the string straight to metav1.DeletionPropagation, so the wrong
+// case has to be caught here rather than by the API server.
+func TestValidate_DeletePropagation(t *testing.T) {
+	cfg := mustParseValid(t, `
+releases:
+  a:
+    chart: { name: r/a }
+    deletePropagation: foreground
+`)
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "unknown deletePropagation") {
+		t.Fatalf("expected deletePropagation error, got: %v", err)
+	}
+
+	for _, p := range DeletePropagations {
+		cfg := mustParseValid(t, `
+releases:
+  a:
+    chart: { name: r/a }
+    deletePropagation: `+p+`
+`)
+		if err := Validate(cfg); err != nil {
+			t.Errorf("propagation %q should be accepted, got %v", p, err)
+		}
+	}
+}
+
+// On a helm repository the scheme is already in the url, so oci_plain_http there
+// would do nothing at all — nelm reads it only on the OCI path.
+func TestValidate_OCIPlainHTTPIsOCIOnly(t *testing.T) {
+	cfg := mustParseValid(t, `
+repositories:
+  helm:
+    url: https://charts.example.com
+    oci_plain_http: true
+releases:
+  a: { chart: { name: helm/a } }
+`)
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "oci_plain_http only applies to oci://") {
+		t.Fatalf("expected oci_plain_http error, got: %v", err)
+	}
+
+	ok := mustParseValid(t, `
+repositories:
+  reg:
+    url: oci://registry:5000
+    oci_plain_http: true
+releases:
+  a: { chart: { name: "oci://registry:5000/a" } }
+`)
+	if err := Validate(ok); err != nil {
+		t.Errorf("oci_plain_http on an OCI registry should be accepted, got %v", err)
+	}
+}
+
+func TestValidate_RepositoryRequestTimeout(t *testing.T) {
+	cfg := mustParseValid(t, `
+repositories:
+  bad:
+    url: https://charts.example.com
+    request_timeout: 30 seconds
+releases:
+  a: { chart: { name: bad/a } }
+`)
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "invalid request_timeout") {
+		t.Fatalf("expected request_timeout error, got: %v", err)
+	}
+
+	ok := mustParseValid(t, `
+repositories:
+  ok:
+    url: https://charts.example.com
+    request_timeout: 30s
+releases:
+  a: { chart: { name: ok/a } }
+`)
+	if err := Validate(ok); err != nil {
+		t.Errorf("30s should be accepted, got %v", err)
+	}
+}
+
 func mustParseValid(t *testing.T, yml string) *Config {
 	t.Helper()
 	cfg, err := Parse([]byte(yml))

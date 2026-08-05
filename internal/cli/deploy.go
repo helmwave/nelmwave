@@ -45,6 +45,9 @@ type deployOptions struct {
 	// registryConfigPath is set internally to a generated Docker config.json for
 	// OCI credentials (see repo.DockerConfig).
 	registryConfigPath string
+	// diff controls how planned changes are rendered; used by diff and by
+	// up --dry-run.
+	diff release.DiffOptions
 }
 
 // deploy selects releases by label, resolves the dependency graph within the
@@ -185,7 +188,10 @@ func diffReleases(ctx context.Context, logger *zap.Logger, p *plan.Plan, o deplo
 		}
 		l := logger.With(zap.String("release", key), zap.String("namespace", spec.Namespace))
 		l.Info("diff started")
-		c, err := applier.Plan(ctx, spec, detailedExitCode)
+		c, err := applier.Plan(ctx, spec, release.PlanOptions{
+			ErrorIfChanges: detailedExitCode,
+			Diff:           o.diff,
+		})
 		if err != nil {
 			return err
 		}
@@ -405,6 +411,16 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 
 	chart := repo.Resolve(rel.Chart.Name, repos)
 
+	// Validated at build time, so a parse error here means someone hand-edited
+	// the planfile.
+	var repoTimeout time.Duration
+	if chart.RequestTimeout != "" {
+		if repoTimeout, err = time.ParseDuration(chart.RequestTimeout); err != nil {
+			return release.Spec{}, fmt.Errorf("release %q: invalid repository request_timeout %q: %w",
+				key, chart.RequestTimeout, err)
+		}
+	}
+
 	setJSON, err := setJSONArgs(rel.Sets)
 	if err != nil {
 		return release.Spec{}, fmt.Errorf("release %q: %w", key, err)
@@ -425,13 +441,25 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 		NamespaceAnnotations: rel.Namespace.Annotations,
 		NamespaceLabels:      rel.Namespace.Labels,
 		AutoRollback:         rel.AutoRollback,
+		ForceAdoption:        rel.ForceAdoption,
+		RemoveManualChanges:  rel.RemoveManualChanges,
+		InstallCRDs:          rel.InstallCRDs,
+		DeletePropagation:    rel.DeletePropagation,
+		HistoryLimit:         rel.HistoryLimit,
 		RepoURL:              chart.RepoURL,
 		RepoUsername:         chart.Username,
 		RepoPassword:         chart.Password,
 		RepoSkipTLS:          chart.SkipTLSVerify,
 		RepoPassCreds:        chart.PassCredentials,
 		RepoCAFile:           chart.CAFile,
+		RepoCertFile:         chart.CertFile,
+		RepoKeyFile:          chart.KeyFile,
+		RepoOCIPlainHTTP:     chart.OCIPlainHTTP,
+		RepoSkipUpdate:       chart.SkipUpdate,
+		RepoRequestTimeout:   repoTimeout,
 		RegistryConfigPath:   o.registryConfigPath,
+		ProvenanceStrategy:   chart.ProvenanceStrategy,
+		ProvenanceKeyring:    chart.ProvenanceKeyring,
 	}, nil
 }
 

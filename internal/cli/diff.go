@@ -16,6 +16,14 @@ type diffOptions struct {
 	concurrency      int
 	includeNeeds     bool
 	detailedExitCode bool
+
+	// How much of each change to print. noVerbose is negative because the
+	// default is on, matching nelm's own CLI.
+	noVerbose         bool
+	verboseCRD        bool
+	showInsignificant bool
+	showSensitive     bool
+	contextLines      int
 }
 
 func newDiffCommand(g *globalOptions) *cobra.Command {
@@ -60,6 +68,15 @@ CI job can gate on drift without parsing output.`,
 	f.StringVar(&o.output, "output", plan.DefaultDir, "directory of the built plan")
 	f.BoolVar(&o.includeNeeds, "include-needs", false, "also plan the releases the selection depends on")
 	f.BoolVar(&o.detailedExitCode, "detailed-exitcode", false, "exit with code 2 when changes are planned")
+	f.BoolVar(&o.noVerbose, "no-verbose-diffs", false,
+		"hide the full manifest of resources that are created or deleted outright")
+	f.BoolVar(&o.verboseCRD, "show-verbose-crd-diffs", false,
+		"print full CRD manifests too (large; hidden by default)")
+	f.BoolVar(&o.showInsignificant, "show-insignificant-diffs", false,
+		"keep helm.sh/werf.io annotations and managedFields in the comparison")
+	f.BoolVar(&o.showSensitive, "show-sensitive-diffs", false,
+		"print Secrets and werf.io/sensitive resources in the clear (avoid in CI)")
+	f.IntVar(&o.contextLines, "diff-context-lines", 0, "unified-diff context lines (0 = nelm's default of 3)")
 	return cmd
 }
 
@@ -79,5 +96,12 @@ func runDiff(cmd *cobra.Command, g *globalOptions, o *diffOptions) error {
 		includeNeeds: o.includeNeeds,
 		kubeContext:  g.kubeContext,
 		kubeConfig:   g.kubeConfig,
+		diff: release.DiffOptions{
+			ShowVerbose:       !o.noVerbose,
+			ShowVerboseCRD:    o.verboseCRD,
+			ShowInsignificant: o.showInsignificant,
+			ShowSensitive:     o.showSensitive,
+			ContextLines:      o.contextLines,
+		},
 	}, o.detailedExitCode, release.NelmApplier{LogLevel: g.logLevel})
 }

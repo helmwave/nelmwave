@@ -112,10 +112,30 @@ registry. A value is either a bare URL string or an object:
 | `insecure_skip_tls_verify` | Disable TLS verification for this repo. |
 | `pass_credentials` | Forward credentials to all domains, not just the repo host. |
 | `ca_file` | Path to a CA bundle for this repo. |
+| `cert_file`, `key_file` | Client TLS certificate and key (mTLS to the repository). |
+| `oci_plain_http` | **OCI only.** Reach the registry over `http://`. A helm repository states its scheme in the `url`, so the field is rejected there. |
+| `skip_update` | Don't refresh the chart's declared `dependencies:` before pulling them. No effect on charts without subcharts. |
+| `request_timeout` | Bound a single request to the repository, e.g. `30s`. The release `timeout` still applies on top. |
+| `provenance_strategy` | Verify the chart's PGP signature: `never` (default), `if-possible`, `always`, `later`. |
+| `provenance_keyring` | Keyring with the public keys to check the signature against. Defaults to helm's `~/.gnupg/pubring.gpg`. |
 
 There is no `repositories.yaml` step: a helm-repo chart is fetched helm
 `--repo` style (chart name plus repo URL), and OCI credentials are handed to nelm
 through a generated, temporary `config.json`.
+
+`oci_plain_http` exists only because `oci://` names an artifact, not a transport:
+the registry client defaults to HTTPS and has no URL scheme to read otherwise.
+It is unrelated to `insecure_skip_tls_verify`, which keeps TLS and only stops
+verifying the certificate.
+
+**Chart signatures.** A signed chart is published with a `.prov` file next to the
+archive, holding a hash of it plus a PGP signature. `provenance_strategy: always`
+refuses to deploy a chart whose signature is missing or does not verify;
+`if-possible` checks it only when a `.prov` exists. Most public repositories
+publish no signatures at all, so `always` on `bitnami/*` will simply fail —
+it is meant for internal repositories whose charts you pack and sign yourself.
+The setting belongs to the repository, and it applies to OCI registries too:
+an `oci://` chart is matched to its registry by URL prefix, longest first.
 
 ### `releases`
 
@@ -352,6 +372,35 @@ nelmwave patches it rather than creating one behind your back.
 | `timeout` | none | Bounds the operation, e.g. `5m`. |
 | `autoRollback` | `false` | Roll back to the last deployed revision on failure (Helm's `--atomic`). |
 
+#### Resource policies
+
+How the release treats the resources it owns:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `forceAdoption` | `false` | Take over a resource that another Helm release claims through `meta.helm.sh/release-name`. Without it nelm refuses to touch it. |
+| `removeManualChanges` | `true` | Reclaim fields added to a resource by hand (`kubectl edit`) that the manifest does not mention. Set to `false` to leave them alone. |
+| `installCRDs` | `true` | Install the CRDs from the chart's `crds/` directory. Turn off where a separate pipeline owns CRDs. |
+| `deletePropagation` | `Foreground` | Default deletion strategy: `Foreground`, `Background` or `Orphan`. Case-sensitive, and validated at build time. A single resource can override it with `werf.io/delete-propagation`. |
+| `historyLimit` | `10` | How many revisions of the release to keep in storage. |
+
+```yaml
+releases:
+  legacy@prod:
+    chart: { name: repo/legacy }
+    forceAdoption: true          # adopting resources from a previous tool
+    removeManualChanges: false   # ... whose manual tweaks must survive
+    historyLimit: 3
+```
+
+`forceAdoption` is for migrations and release renames — a rename makes the
+release a new owner of existing resources. Leaving it on permanently means the
+next name collision silently steals someone else's resources instead of failing.
+
+`deletePropagation` and `historyLimit` apply to `down` as well as `up`;
+`removeManualChanges` applies to both and to `diff`, so the preview matches what
+the apply will do.
+
 ### `Release:` — defaults for every release
 
 The top-level `Release:` block is a confijer *type default*: it applies to every
@@ -429,6 +478,25 @@ Common command flags: `-l/--selector`, `--concurrency`, `--output`,
 
 `--log-format auto` picks console output on a TTY and JSON everywhere else, so
 CI logs stay machine-readable without a flag.
+
+`--log-level` also sets nelm's own verbosity, so `--log-level debug` gets you
+the engine's debug output too, and `--log-level error` silences its progress.
+
+### How much `diff` prints
+
+`diff` hides parts of a change by default, the same way nelm's CLI does. Each
+kind of omission has its own switch:
+
+| Flag | Effect |
+|---|---|
+| `--no-verbose-diffs` | Replace the manifest of a resource created or deleted outright with `<hidden verbose changes>`. On by default — this flag turns it off. |
+| `--show-verbose-crd-diffs` | Print full CRD manifests too. Off by default: a CRD schema is long enough to bury everything else. |
+| `--show-insignificant-diffs` | Keep `helm.sh/*` and `werf.io/*` annotations and `managedFields` in the comparison. Reach for this when a release reports changes you cannot see — the difference is in what was stripped, shown as `<hidden insignificant changes>`. |
+| `--show-sensitive-diffs` | Print Secrets and `werf.io/sensitive` resources in the clear instead of `<hidden sensitive changes>`. Local debugging only: in CI this writes secrets to the job log. |
+| `--diff-context-lines` | Unified-diff context size (default 3). |
+
+`up --dry-run` takes no such flags and always plans with these defaults; use
+`nelmwave diff` when you need to change the view.
 
 ### Selecting releases
 

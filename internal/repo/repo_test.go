@@ -39,6 +39,87 @@ func TestResolve_OCIPassthrough(t *testing.T) {
 	}
 }
 
+// Transport settings describe how to reach the repository, so they must survive
+// the resolve for both kinds of source — including OCI, which is matched by URL
+// rather than by alias.
+func TestResolve_TransportSettings(t *testing.T) {
+	full := config.Repository{
+		InsecureSkipTLSVerify: true,
+		CAFile:                "/tls/ca.pem",
+		CertFile:              "/tls/client.pem",
+		KeyFile:               "/tls/client-key.pem",
+		OCIPlainHTTP:          true,
+		SkipUpdate:            true,
+		RequestTimeout:        "30s",
+	}
+
+	check := func(t *testing.T, what string, r ChartResolution) {
+		t.Helper()
+		if !r.SkipTLSVerify || r.CAFile != "/tls/ca.pem" || r.CertFile != "/tls/client.pem" ||
+			r.KeyFile != "/tls/client-key.pem" || !r.OCIPlainHTTP || !r.SkipUpdate || r.RequestTimeout != "30s" {
+			t.Errorf("%s: transport settings lost: %+v", what, r)
+		}
+	}
+
+	helm := full
+	helm.URL = "https://charts.example.com"
+	check(t, "helm repo", Resolve("internal/api", map[string]config.Repository{"internal": helm}))
+
+	oci := full
+	oci.URL = "oci://registry.example.com"
+	check(t, "oci registry", Resolve("oci://registry.example.com/api", map[string]config.Repository{"reg": oci}))
+}
+
+// Basic auth is a helm-repo concept here: for OCI the credentials travel in a
+// generated Docker config.json instead, so they must not leak into the spec.
+func TestResolve_OCICarriesNoBasicAuth(t *testing.T) {
+	r := Resolve("oci://registry.example.com/charts/api", repos())
+	if r.Username != "" || r.Password != "" || r.PassCredentials {
+		t.Errorf("OCI resolution must not carry basic auth: %+v", r)
+	}
+}
+
+func TestResolve_ProvenanceFromHelmRepo(t *testing.T) {
+	rs := repos()
+	rs["bitnami"] = config.Repository{
+		URL:                "https://charts.bitnami.com/bitnami",
+		ProvenanceStrategy: "always",
+		ProvenanceKeyring:  "/keys/pubring.gpg",
+	}
+	r := Resolve("bitnami/postgresql", rs)
+	if r.ProvenanceStrategy != "always" || r.ProvenanceKeyring != "/keys/pubring.gpg" {
+		t.Errorf("provenance not carried from the helm repo: %+v", r)
+	}
+}
+
+// An OCI chart is addressed by URL, not by alias, so the repository it belongs
+// to has to be found by prefix — otherwise provenance settings declared on an
+// OCI registry would silently do nothing.
+func TestResolve_ProvenanceFromOCIRegistryByPrefix(t *testing.T) {
+	rs := map[string]config.Repository{
+		"broad":  {URL: "oci://ghcr.io", ProvenanceStrategy: "if-possible"},
+		"narrow": {URL: "oci://ghcr.io/acme/", ProvenanceStrategy: "always"},
+		"other":  {URL: "oci://quay.io", ProvenanceStrategy: "later"},
+	}
+
+	// Longest matching prefix wins, trailing slash and all.
+	if r := Resolve("oci://ghcr.io/acme/api", rs); r.ProvenanceStrategy != "always" {
+		t.Errorf("strategy = %q, want always (from the narrower registry)", r.ProvenanceStrategy)
+	}
+	// Falls back to the broader registry when the narrow one does not match.
+	if r := Resolve("oci://ghcr.io/other/api", rs); r.ProvenanceStrategy != "if-possible" {
+		t.Errorf("strategy = %q, want if-possible", r.ProvenanceStrategy)
+	}
+	// An undeclared registry carries nothing.
+	if r := Resolve("oci://docker.io/x/y", rs); r.ProvenanceStrategy != "" {
+		t.Errorf("undeclared registry got strategy %q", r.ProvenanceStrategy)
+	}
+	// A host that merely shares a prefix is not a match.
+	if r := Resolve("oci://ghcr.io.evil.com/x", rs); r.ProvenanceStrategy != "" {
+		t.Errorf("lookalike host matched: %q", r.ProvenanceStrategy)
+	}
+}
+
 func TestResolve_UnknownAliasIsLocal(t *testing.T) {
 	r := Resolve("./charts/local", repos())
 	if r.Ref != "./charts/local" || r.RepoURL != "" {
