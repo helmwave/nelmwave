@@ -24,8 +24,42 @@ type Release struct {
 	// Stores are companion files resolved and stored alongside the plan.
 	Stores []FileRef `json:"stores" yaml:"stores"`
 
-	// nelm option passthrough.
-	Options ReleaseOptions `json:"options" yaml:"options"`
+	// Namespace configures the release's namespace — not which namespace it is
+	// (that comes from the release key), but whether nelmwave creates it and what
+	// metadata it carries.
+	Namespace Namespace `json:"namespace" yaml:"namespace,omitempty"`
+
+	// Timeout bounds the operation, e.g. "5m". Empty means nelm's default.
+	Timeout string `json:"timeout" yaml:"timeout,omitempty"`
+	// AutoRollback rolls back to the last deployed revision on failure
+	// (nelm AutoRollback, akin to helm --atomic).
+	AutoRollback bool `json:"autoRollback" yaml:"autoRollback,omitempty"`
+}
+
+// Namespace holds the settings for a release's namespace. The namespace *name*
+// is part of the release key ("api@production"), never a field here.
+//
+// As a distinct type it also gets a confijer type-default bucket, so a top-level
+// "Namespace:" block applies the same creation policy and metadata to every
+// release.
+type Namespace struct {
+	// Create makes nelmwave ensure the namespace exists before applying
+	// (nelm's NoCreateNamespace = !Create).
+	Create bool `json:"create" yaml:"create" default:"true"`
+	// Annotations are applied to the namespace itself. They are merged into
+	// whatever is already there; nelmwave never removes annotations it does not
+	// manage.
+	Annotations map[string]string `json:"annotations" yaml:"annotations,omitempty"`
+	// Labels are applied to the namespace itself, with the same merge semantics
+	// as Annotations. Useful for policy selectors such as
+	// pod-security.kubernetes.io/enforce or istio-injection.
+	Labels map[string]string `json:"labels" yaml:"labels,omitempty"`
+}
+
+// HasMetadata reports whether any namespace metadata was declared, i.e. whether
+// nelmwave has to touch the namespace object beyond letting nelm create it.
+func (n Namespace) HasMetadata() bool {
+	return len(n.Annotations) > 0 || len(n.Labels) > 0
 }
 
 // Chart identifies a chart source.
@@ -34,17 +68,4 @@ type Chart struct {
 	Name string `json:"name" yaml:"name"`
 	// Version is a chart version or constraint.
 	Version string `json:"version" yaml:"version"`
-}
-
-// ReleaseOptions carries a subset of nelm ReleaseInstall/Uninstall options that
-// make sense to express per release. Names map onto nelm's action options in
-// the release adapter (added in a later milestone).
-type ReleaseOptions struct {
-	// Timeout for the operation, e.g. "5m". Empty means nelm's default.
-	Timeout string `json:"timeout" yaml:"timeout,omitempty"`
-	// CreateNamespace controls namespace creation (nelm NoCreateNamespace = !this).
-	CreateNamespace bool `json:"createNamespace" yaml:"createNamespace" default:"true"`
-	// AutoRollback rolls back to the last deployed revision on failure
-	// (nelm AutoRollback, akin to helm --atomic).
-	AutoRollback bool `json:"autoRollback" yaml:"autoRollback"`
 }

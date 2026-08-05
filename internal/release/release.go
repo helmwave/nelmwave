@@ -43,6 +43,12 @@ type Spec struct {
 	Timeout time.Duration
 	// CreateNamespace creates the namespace if missing (install only).
 	CreateNamespace bool
+	// NamespaceAnnotations / NamespaceLabels are merged onto the namespace object
+	// before the release is applied, so policy labels (pod-security,
+	// istio-injection) are in place by the time workloads land. Metadata not
+	// listed here is left alone.
+	NamespaceAnnotations map[string]string
+	NamespaceLabels      map[string]string
 	// AutoRollback rolls back to the last deployed revision on failure (install only).
 	AutoRollback bool
 }

@@ -31,8 +31,8 @@ releases:
 	if !ok {
 		t.Fatalf("release %q missing; got %v", "cache@app", cfg.Releases)
 	}
-	if !r.Options.CreateNamespace {
-		t.Errorf("createNamespace should default to true, got false")
+	if !r.Namespace.Create {
+		t.Errorf("namespace.create should default to true, got false")
 	}
 	if r.Chart.Name != "bitnami/redis" || r.Chart.Version != "20.x" {
 		t.Errorf("chart not parsed: %+v", r.Chart)
@@ -249,8 +249,7 @@ func TestSelector_ParseAndMatch(t *testing.T) {
 func TestParse_FileRefForms(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
-  a:
-    namespace: n
+  a@n:
     chart: { name: r/a }
     values:
       - src: file://values/pg.yml.tpl
@@ -260,7 +259,7 @@ releases:
       - env:PG_VALUES
       - { src: values/opt.yml, optional: true }
 `)
-	vals := cfg.Releases["a"].Values
+	vals := cfg.Releases["a@n"].Values
 	if len(vals) != 6 {
 		t.Fatalf("want 6 value refs, got %d: %+v", len(vals), vals)
 	}
@@ -283,13 +282,12 @@ releases:
 func TestParse_StoreFileRefBareForm(t *testing.T) {
 	cfg := mustParseValid(t, `
 releases:
-  a:
-    namespace: n
+  a@n:
     chart: { name: r/a }
     stores:
       - file://extra/netpol.yml
 `)
-	stores := cfg.Releases["a"].Stores
+	stores := cfg.Releases["a@n"].Stores
 	if len(stores) != 1 || stores[0].Src != "extra/netpol.yml" {
 		t.Fatalf("bare store form not normalized: %+v", stores)
 	}
@@ -333,5 +331,75 @@ releases:
 	}
 	if bv := cfg.Releases["b@ns"].Values; len(bv) != 1 || bv[0].Src != "common.yml" {
 		t.Errorf("b values should inherit the default, got %v", bv)
+	}
+}
+
+func TestParse_NamespaceBlock(t *testing.T) {
+	cfg := mustParseValid(t, `
+releases:
+  api@prod:
+    chart: { name: r/api }
+    namespace:
+      create: false
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
+      annotations:
+        owner: platform
+`)
+	ns := cfg.Releases["api@prod"].Namespace
+	if ns.Create {
+		t.Error("namespace.create: explicit false must survive the default:\"true\" tag")
+	}
+	if ns.Labels["pod-security.kubernetes.io/enforce"] != "restricted" {
+		t.Errorf("namespace labels = %v", ns.Labels)
+	}
+	if ns.Annotations["owner"] != "platform" {
+		t.Errorf("namespace annotations = %v", ns.Annotations)
+	}
+	if !ns.HasMetadata() {
+		t.Error("HasMetadata should be true when labels or annotations are set")
+	}
+}
+
+func TestParse_NamespaceAsScalarIsRejected(t *testing.T) {
+	// The namespace name lives in the release key. Written as a scalar the field
+	// used to be silently dropped, which looked like it worked.
+	_, err := Parse([]byte(`
+releases:
+  api:
+    namespace: production
+    chart: { name: r/api }
+`))
+	if err == nil {
+		t.Fatal("a scalar namespace should be rejected, not ignored")
+	}
+	if !strings.Contains(err.Error(), "api@production") {
+		t.Errorf("error should suggest the release key form, got: %v", err)
+	}
+}
+
+// A top-level Namespace: block is a confijer type default, so one policy can
+// cover every release without repeating it.
+func TestParse_NamespaceTypeDefaultAppliesToAllReleases(t *testing.T) {
+	cfg := mustParseValid(t, `
+Namespace:
+  labels:
+    managed-by: nelmwave
+
+releases:
+  api@prod:
+    chart: { name: r/api }
+  web@prod:
+    chart: { name: r/web }
+    namespace:
+      labels:
+        tier: front
+`)
+	if got := cfg.Releases["api@prod"].Namespace.Labels["managed-by"]; got != "nelmwave" {
+		t.Errorf("api should inherit the type default, got %q", got)
+	}
+	web := cfg.Releases["web@prod"].Namespace.Labels
+	if web["tier"] != "front" || web["managed-by"] != "nelmwave" {
+		t.Errorf("web labels should merge its own with the default, got %v", web)
 	}
 }

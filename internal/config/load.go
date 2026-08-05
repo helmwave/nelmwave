@@ -27,6 +27,9 @@ func Parse(data []byte) (*Config, error) {
 	normalizeRefLists(raw)
 	normalizeRepositories(raw)
 	normalizeLabels(raw)
+	if err := checkNamespaceBlocks(raw); err != nil {
+		return nil, err
+	}
 
 	normalized, err := yaml.Marshal(raw)
 	if err != nil {
@@ -114,6 +117,34 @@ func stringifyValues(v any) {
 			m[k] = fmt.Sprintf("%v", val)
 		}
 	}
+}
+
+// checkNamespaceBlocks rejects a release whose `namespace:` is a scalar. The
+// namespace *name* belongs to the release key ("api@production"); the field is a
+// block of settings. confijer would silently drop a scalar where it expects a
+// struct, so `namespace: production` would look accepted while doing nothing —
+// worth an explicit error.
+func checkNamespaceBlocks(root map[string]any) error {
+	releases, ok := root["releases"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, key := range sortedStringKeys(releases) {
+		body, ok := releases[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		ns, present := body["namespace"]
+		if !present || ns == nil {
+			continue
+		}
+		if _, isMap := ns.(map[string]any); !isMap {
+			return fmt.Errorf("release %q: namespace must be a block of settings "+
+				"(create/annotations/labels), not %v — the namespace name belongs in "+
+				"the release key, e.g. %q", key, ns, fmt.Sprintf("%s@%v", key, ns))
+		}
+	}
+	return nil
 }
 
 // normalizeRepositories rewrites bare-URL-string repository entries into

@@ -17,3 +17,7 @@ coverage.txt
 .DS_Store
 .idea/
 .vscode/
+
+# graphify: knowledge graph output + hooks with machine-local paths
+graphify-out/
+.claude/settings.json

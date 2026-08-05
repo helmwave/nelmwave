@@ -11,8 +11,13 @@ project: nelmwave-e2e
 Release:
   labels:
     suite: e2e
-  options:
-    timeout: 3m
+  timeout: 3m
+  namespace:
+    # Applied before the release, so the suite can assert they landed.
+    labels:
+      suite: e2e
+    annotations:
+      nelmwave.io/managed: "true"
 
 releases:
   # A dependency, selected by the label selector below rather than by name.

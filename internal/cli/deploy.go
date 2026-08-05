@@ -392,9 +392,9 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 	}
 
 	var timeout time.Duration
-	if rel.Options.Timeout != "" {
-		if timeout, err = time.ParseDuration(rel.Options.Timeout); err != nil {
-			return release.Spec{}, fmt.Errorf("release %q: invalid timeout %q: %w", key, rel.Options.Timeout, err)
+	if rel.Timeout != "" {
+		if timeout, err = time.ParseDuration(rel.Timeout); err != nil {
+			return release.Spec{}, fmt.Errorf("release %q: invalid timeout %q: %w", key, rel.Timeout, err)
 		}
 	}
 
@@ -406,24 +406,26 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 	}
 
 	return release.Spec{
-		Name:               id.Name,
-		Namespace:          namespace,
-		KubeContext:        kubeContext,
-		KubeConfig:         o.kubeConfig,
-		Chart:              chart.Ref,
-		ChartVersion:       rel.Chart.Version,
-		ValuesFiles:        valuesFiles,
-		SetJSON:            setJSON,
-		Timeout:            timeout,
-		CreateNamespace:    rel.Options.CreateNamespace,
-		AutoRollback:       rel.Options.AutoRollback,
-		RepoURL:            chart.RepoURL,
-		RepoUsername:       chart.Username,
-		RepoPassword:       chart.Password,
-		RepoSkipTLS:        chart.SkipTLSVerify,
-		RepoPassCreds:      chart.PassCredentials,
-		RepoCAFile:         chart.CAFile,
-		RegistryConfigPath: o.registryConfigPath,
+		Name:                 id.Name,
+		Namespace:            namespace,
+		KubeContext:          kubeContext,
+		KubeConfig:           o.kubeConfig,
+		Chart:                chart.Ref,
+		ChartVersion:         rel.Chart.Version,
+		ValuesFiles:          valuesFiles,
+		SetJSON:              setJSON,
+		Timeout:              timeout,
+		CreateNamespace:      rel.Namespace.Create,
+		NamespaceAnnotations: rel.Namespace.Annotations,
+		NamespaceLabels:      rel.Namespace.Labels,
+		AutoRollback:         rel.AutoRollback,
+		RepoURL:              chart.RepoURL,
+		RepoUsername:         chart.Username,
+		RepoPassword:         chart.Password,
+		RepoSkipTLS:          chart.SkipTLSVerify,
+		RepoPassCreds:        chart.PassCredentials,
+		RepoCAFile:           chart.CAFile,
+		RegistryConfigPath:   o.registryConfigPath,
 	}, nil
 }
 

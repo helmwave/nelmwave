@@ -77,6 +77,23 @@ func TestLifecycle(t *testing.T) {
 		for _, name := range []string{"base", "app"} {
 			waitDeploymentReady(ctx, t, clients, name)
 		}
+
+		// nelm creates namespaces with nothing but a name, so this metadata
+		// proves nelmwave applied it itself.
+		ns, err := clients.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("get namespace: %v", err)
+		}
+		if got := ns.Labels["suite"]; got != "e2e" {
+			t.Errorf("namespace label suite = %q, want e2e", got)
+		}
+		if got := ns.Annotations["nelmwave.io/managed"]; got != "true" {
+			t.Errorf("namespace annotation nelmwave.io/managed = %q, want true", got)
+		}
+		// Kubernetes' own namespace label must survive the merge.
+		if got := ns.Labels["kubernetes.io/metadata.name"]; got != namespace {
+			t.Errorf("merge clobbered an unmanaged label: kubernetes.io/metadata.name = %q", got)
+		}
 	})
 
 	t.Run("diff is clean right after up", func(t *testing.T) {

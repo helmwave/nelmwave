@@ -50,13 +50,19 @@ type Need struct {
 // ("name[@namespace[@kubecontext]]") in Plan.Releases. It mirrors config.Release
 // but stores resolved dependency edges and artifact paths.
 type Release struct {
-	Labels  map[string]string     `yaml:"labels,omitempty"`
-	Needs   []Need                `yaml:"needs,omitempty"`
-	Chart   config.Chart          `yaml:"chart,omitempty"`
-	Values  []config.FileRef      `yaml:"values,omitempty"`
-	Sets    map[string]any        `yaml:"sets,omitempty"`
-	Stores  []config.FileRef      `yaml:"stores,omitempty"`
-	Options config.ReleaseOptions `yaml:"options"`
+	Labels map[string]string `yaml:"labels,omitempty"`
+	Needs  []Need            `yaml:"needs,omitempty"`
+	Chart  config.Chart      `yaml:"chart,omitempty"`
+	Values []config.FileRef  `yaml:"values,omitempty"`
+	Sets   map[string]any    `yaml:"sets,omitempty"`
+	Stores []config.FileRef  `yaml:"stores,omitempty"`
+
+	// Namespace creation policy and metadata for this release.
+	Namespace config.Namespace `yaml:"namespace"`
+	// Timeout bounds the operation ("5m"); empty means nelm's default.
+	Timeout string `yaml:"timeout,omitempty"`
+	// AutoRollback rolls back to the last deployed revision on failure.
+	AutoRollback bool `yaml:"autoRollback,omitempty"`
 
 	// ValuesFiles are the plan-relative paths to the resolved values files, in
 	// precedence order (lowest first: global values, then per-release). They are
@@ -73,13 +79,15 @@ func FromConfig(cfg *config.Config) *Plan {
 	}
 	for name, r := range cfg.Releases {
 		p.Releases[name] = Release{
-			Labels:  r.Labels,
-			Needs:   resolveNeeds(cfg, name, r),
-			Chart:   r.Chart,
-			Values:  r.Values,
-			Sets:    r.Sets,
-			Stores:  r.Stores,
-			Options: r.Options,
+			Labels:       r.Labels,
+			Needs:        resolveNeeds(cfg, name, r),
+			Chart:        r.Chart,
+			Values:       r.Values,
+			Sets:         r.Sets,
+			Stores:       r.Stores,
+			Namespace:    r.Namespace,
+			Timeout:      r.Timeout,
+			AutoRollback: r.AutoRollback,
 		}
 	}
 	return p

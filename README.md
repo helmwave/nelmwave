@@ -300,14 +300,50 @@ the explicit entry decides.
 An empty label selector adds no dependencies — it does **not** match everything.
 Cycles are rejected at build time, with the cycle printed.
 
-#### `options`
+#### `namespace`
 
-nelm options that make sense per release:
+Settings for the release's namespace. Not *which* namespace — that is part of
+the release key (`api@production`) — but whether nelmwave creates it and what
+metadata it carries:
+
+```yaml
+releases:
+  api@production:
+    chart: { name: repo/api }
+    namespace:
+      create: true
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
+        istio-injection: enabled
+      annotations:
+        owner: platform-team
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `create` | `true` | Ensure the namespace exists before applying. |
+| `labels` | none | Labels merged onto the namespace object. |
+| `annotations` | none | Annotations merged onto the namespace object. |
+
+Labels and annotations **merge**: keys nelmwave does not declare are left alone,
+so it coexists with whatever else manages that namespace.
+
+They are applied **before** the release, not after — a policy label such as
+`istio-injection` or `pod-security.kubernetes.io/enforce` only affects workloads
+created once it is in place. nelm's own API creates namespaces with nothing but
+a name, so nelmwave writes this metadata itself.
+
+With `create: false` and metadata declared, the namespace must already exist;
+nelmwave patches it rather than creating one behind your back.
+
+> Writing `namespace: production` (a string) is an error, not a silent no-op:
+> the name belongs in the release key.
+
+#### `timeout` and `autoRollback`
 
 | Field | Default | Meaning |
 |---|---|---|
 | `timeout` | none | Bounds the operation, e.g. `5m`. |
-| `createNamespace` | `true` | Create the namespace if missing. |
 | `autoRollback` | `false` | Roll back to the last deployed revision on failure (Helm's `--atomic`). |
 
 ### `Release:` — defaults for every release
@@ -319,9 +355,14 @@ value of the Go type `Release`, i.e. to every entry under `releases:`.
 Release:
   labels:
     common: true
-  options:
-    autoRollback: true
+  autoRollback: true
+  namespace:
+    labels:
+      managed-by: nelmwave
 ```
+
+The same works per type: a top-level `Namespace:` block applies its creation
+policy and metadata to every release's namespace.
 
 Maps deep-merge, and a release's own key wins:
 

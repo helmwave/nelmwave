@@ -36,8 +36,15 @@ func nelmContext(ctx context.Context) context.Context {
 	return nelmlog.SetupLogging(ctx, nelmlog.InfoLevel, nelmlog.SetupLoggingOptions{})
 }
 
-// Install deploys or upgrades a release via action.ReleaseInstall.
+// Install deploys or upgrades a release via action.ReleaseInstall, first making
+// sure the namespace carries any declared metadata.
 func (NelmApplier) Install(ctx context.Context, s Spec) error {
+	// Before nelm, not after: namespace labels such as istio-injection or
+	// pod-security only affect workloads created once they are in place.
+	if err := applyNamespaceMetadata(ctx, s); err != nil {
+		return err
+	}
+
 	ctx = nelmContext(ctx)
 	opts := action.ReleaseInstallOptions{
 		Chart:                   s.Chart,

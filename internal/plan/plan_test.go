@@ -16,11 +16,11 @@ func TestFromConfig_AndRoundTrip(t *testing.T) {
 		},
 		Releases: map[string]config.Release{
 			"api@app": {
-				Labels:  map[string]string{"app": "api"},
-				Needs:   config.Needs{Releases: map[string]config.NeedRelease{"db@data": {Optional: true}}},
-				Chart:   config.Chart{Name: "oci://r/api", Version: "1.0.0"},
-				Values:  []config.FileRef{{Src: "file://v.yml"}},
-				Options: config.ReleaseOptions{CreateNamespace: true},
+				Labels:    map[string]string{"app": "api"},
+				Needs:     config.Needs{Releases: map[string]config.NeedRelease{"db@data": {Optional: true}}},
+				Chart:     config.Chart{Name: "oci://r/api", Version: "1.0.0"},
+				Values:    []config.FileRef{{Src: "file://v.yml"}},
+				Namespace: config.Namespace{Create: true},
 			},
 		},
 	}
