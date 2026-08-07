@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -411,6 +412,21 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 	}
 
 	chart := repo.Resolve(rel.Chart.Name, repos)
+	chartRef, chartVersion := chart.Ref, rel.Chart.Version
+
+	// A chart `build --download-charts` already fetched replaces the reference
+	// wholesale: the archive is the resolved chart, so nothing about the
+	// repository — URL, credentials, version constraint — applies any more, and
+	// nelm loads it straight off disk without touching a registry.
+	if rel.ChartFile != "" {
+		chartRef = filepath.Join(absOut, filepath.FromSlash(rel.ChartFile))
+		if _, err := os.Stat(chartRef); err != nil {
+			return release.Spec{}, fmt.Errorf("release %q: chart archive %q from the plan is missing "+
+				"(copy the whole build directory, or rebuild without --download-charts): %w",
+				key, rel.ChartFile, err)
+		}
+		chart, chartVersion = repo.ChartResolution{}, ""
+	}
 
 	// Validated at build time, so a parse error here means someone hand-edited
 	// the planfile.
@@ -438,8 +454,8 @@ func buildSpec(key string, rel plan.Release, repos map[string]config.Repository,
 		Namespace:            namespace,
 		KubeContext:          kubeContext,
 		Kube:                 o.kube,
-		Chart:                chart.Ref,
-		ChartVersion:         rel.Chart.Version,
+		Chart:                chartRef,
+		ChartVersion:         chartVersion,
 		ValuesFiles:          valuesFiles,
 		SetJSON:              setJSON,
 		Timeout:              timeout,

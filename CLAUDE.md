@@ -68,13 +68,15 @@ dependency order. Full user-facing schema and flag reference lives in
 
 `build` is the **only** phase that renders templates or touches datasources. It
 writes a self-contained artifact directory (`.nelmwave/`: `planfile.yml`,
-`values/<uniqname>/`, `stores/<uniqname>/`). `up`, `down` and `diff` read that
-plan and never re-render, so what was reviewed is what gets applied. Never add
-template rendering or datasource resolution to a runtime command path.
+`values/<uniqname>/`, `stores/<uniqname>/`, and `charts/<chart>/` with
+`--download-charts`, which is also the only phase that fetches charts). `up`, `down` and `diff` read that plan and never re-render,
+so what was reviewed is what gets applied. Never add template rendering or
+datasource resolution to a runtime command path.
 
 Pipeline: `cli/build.go: buildPlan()` → `tpl.Render` (gomplate, `[[ ]]`) →
 `config.Parse` → `config.Validate` → `plan.FromConfig` → `build.Artifacts`
-(resolves values/stores into `.nelmwave/`) → `plan.Write`.
+(resolves values/stores into `.nelmwave/`) → `build.Charts` (only with
+`--download-charts`; sets each release's `ChartFile`) → `plan.Write`.
 
 Runtime path: `plan.Read` → `cli/deploy.go: deploy()` → label selection →
 `--include-needs` expansion / required-need check → `graph.Reverse` for `down` →
@@ -88,7 +90,8 @@ Runtime path: `plan.Read` → `cli/deploy.go: deploy()` → label selection →
 | `internal/config` | manifest schema, confijer loading, normalization, validation, uniqnames, selectors |
 | `internal/tpl` | gomplate v5 rendering with `[[ ]]` delimiters (Helm's `{{ }}` stays untouched) |
 | `internal/datasource` | turn one `FileRef.Src` into bytes; behaviour chosen by extension |
-| `internal/build` | drive the resolver over every release, write artifacts, register cross-reference datasources |
+| `internal/build` | drive the resolver over every release, write artifacts, register cross-reference datasources, download charts |
+| `internal/chart` | `helm pull` through nelm's vendored helm getters, for `build --download-charts` |
 | `internal/plan` | the on-disk plan: `FromConfig`, `Write`, `Read` |
 | `internal/graph` | concurrent DAG executor |
 | `internal/release` | `Spec`/`Applier` abstraction and the nelm implementation; namespace metadata; kube connection |
@@ -127,6 +130,17 @@ binary), `.yml.tpl.sops` decrypted then rendered. Within a release, `stores`
 resolve before `values`, and each resolved artifact is registered as a gomplate
 datasource (`stores/<name>`, `values/<name>`) visible to *later* artifacts of the
 same release only.
+
+**`ChartFile` overrides the chart reference, it does not supplement it.**
+`build.Charts` (only under `--download-charts`) puts *every* chart into
+`.nelmwave/charts/` — remote ones downloaded, local ones copied — so there is a
+single rule at apply time. Once `plan.Release.ChartFile` is set, `buildSpec`
+swaps in the absolute path and clears the version *and* the whole
+`repo.ChartResolution`: it is already one version of one chart, so a leftover
+constraint or repo URL could only send nelm looking elsewhere. nelm treats an
+absolute path as a local chart (`isLocalChart`), which is what keeps the apply
+offline. Local chart paths resolve against the *manifest* directory here, like
+values and stores — not the process CWD, which is what nelm would use.
 
 **`graph.Run` is fail-fast per branch, not globally.** A failed node skips its
 dependents and returns `Result{Skipped: true}` for them; unrelated branches keep

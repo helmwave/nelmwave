@@ -28,6 +28,10 @@ const (
 	// namespace, so a path under .nelmwave/ and a `ds "stores/x"` reference read
 	// the same way.
 	StoreDir = "stores"
+	// ChartsDir holds chart archives downloaded by `build --download-charts`.
+	// Unlike values and stores it is keyed by chart, not by release: two
+	// releases of the same chart share one archive.
+	ChartsDir = "charts"
 )
 
 // Plan is the flat, fully-resolved deployment plan persisted to disk.
@@ -77,6 +81,12 @@ type Release struct {
 	// precedence order (lowest first: global values, then per-release). They are
 	// passed to nelm as-is; nelm performs the ordered Helm-style merge.
 	ValuesFiles []string `yaml:"valuesFiles,omitempty"`
+
+	// ChartFile is the plan-relative path to the chart archive `build
+	// --download-charts` fetched for this release. When set it replaces
+	// Chart.Name at apply time, so up/down/diff need no registry at all. Empty
+	// means the chart is still resolved against Repositories, as before.
+	ChartFile string `yaml:"chartFile,omitempty"`
 }
 
 // FromConfig projects a validated Config into a Plan.

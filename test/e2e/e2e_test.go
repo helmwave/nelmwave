@@ -4,7 +4,9 @@
 //
 // The cluster is a k3s container owned by docker-compose (see
 // docker-compose.yml); the chart is a local one from testdata, so the suite
-// downloads nothing and every assertion is about nelmwave's own behaviour.
+// downloads nothing from the internet and every assertion is about nelmwave's
+// own behaviour. The --download-charts test publishes that same chart through a
+// repository it starts itself, and stops it before applying.
 //
 //	docker-compose -f test/e2e/docker-compose.yml up -d --wait
 //	KUBECONFIG=test/e2e/.kube/kubeconfig.yaml go test -tags e2e ./test/e2e/...
@@ -140,6 +142,59 @@ func TestLifecycle(t *testing.T) {
 		run(t, "down", "--output", out, "--kube-config", kubeconfig)
 		waitGone(ctx, t, clients, "base")
 	})
+}
+
+// TestChartsInTheBuildDirectory is the whole point of `--download-charts`:
+// build while the chart sources are reachable, then take them away and still
+// deploy. The repository is stopped between build and up, so a release that
+// reached for it would fail rather than quietly succeed from some cache. The
+// second release covers the other half — a local chart, copied in — and both
+// come out of the same directory.
+func TestChartsInTheBuildDirectory(t *testing.T) {
+	kubeconfig := requireKubeconfig(t)
+	clients := connect(t, kubeconfig)
+	ctx := context.Background()
+
+	cleanNamespace(ctx, t, clients)
+	t.Cleanup(func() { cleanNamespace(context.Background(), t, clients) })
+
+	repoURL, stopRepo := serveChartRepo(t, abs(t, "testdata/chart"), "nelmwave-e2e", "0.1.0")
+	t.Cleanup(stopRepo)
+
+	manifest := abs(t, "testdata/downloaded-chart.yml.tpl")
+	out := filepath.Join(t.TempDir(), ".nelmwave")
+	setEnv(t, map[string]string{
+		"E2E_NS":       namespace,
+		"E2E_CHART":    abs(t, "testdata/chart"),
+		"E2E_MESSAGE":  "from-the-build-directory",
+		"E2E_REPO_URL": repoURL,
+	})
+
+	run(t, "build", "--file", manifest, "--output", out, "--download-charts")
+	// The downloaded chart is an archive; the local one is the copied tree.
+	mustExist(t, filepath.Join(out, "charts", "e2e_nelmwave-e2e", "nelmwave-e2e-0.1.0.tgz"))
+	mustExist(t, filepath.Join(out, "charts", "chart", "Chart.yaml"))
+	mustExist(t, filepath.Join(out, "charts", "chart", "templates", "configmap.yaml"))
+
+	// From here on there is no chart repository anywhere.
+	stopRepo()
+
+	run(t, "up", "--output", out, "--kube-config", kubeconfig)
+	for _, name := range []string{"downloaded", "copied"} {
+		assertConfigMap(ctx, t, clients, name, "from-the-build-directory")
+		waitDeploymentReady(ctx, t, clients, name)
+	}
+
+	// diff reads the same charts, so a plan is clean without the repository too.
+	err := execute(t, "diff", "--output", out, "--kube-config", kubeconfig, "--detailed-exitcode")
+	if code := cli.ExitCode(err); code != 0 {
+		t.Fatalf("diff right after up: exit %d, err %v; want a clean 0", code, err)
+	}
+
+	run(t, "down", "--output", out, "--kube-config", kubeconfig)
+	for _, name := range []string{"downloaded", "copied"} {
+		waitGone(ctx, t, clients, name)
+	}
 }
 
 // TestRequiredNeedOutsideSelection covers the needs policy against a live

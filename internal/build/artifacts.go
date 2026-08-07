@@ -205,19 +205,24 @@ func indexedBasename(index int, src string) string {
 	// .sops or .tpl would claim otherwise.
 	label = strings.TrimSuffix(label, ".sops")
 	label = strings.TrimSuffix(strings.TrimSuffix(label, ".tpl"), ".tmpl")
-	label = pathBase(label)
-	label = strings.Map(func(r rune) rune {
+	label = sanitizeSegment(pathBase(label))
+	if label == "" {
+		label = "values"
+	}
+	return fmt.Sprintf("%02d-%s", index, label)
+}
+
+// sanitizeSegment makes an arbitrary string usable as one path segment, mapping
+// everything outside [A-Za-z0-9._-] to '_'.
+func sanitizeSegment(s string) string {
+	return strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
 			return r
 		default:
 			return '_'
 		}
-	}, label)
-	if label == "" {
-		label = "values"
-	}
-	return fmt.Sprintf("%02d-%s", index, label)
+	}, s)
 }
 
 // pathBase returns the last '/'-separated segment of s (URLs and manifest paths

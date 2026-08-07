@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -341,6 +343,66 @@ func TestDeploy_ResourcePoliciesReachTheApplier(t *testing.T) {
 	if !got.ForceAdoption || got.RemoveManualChanges || !got.InstallCRDs ||
 		got.DeletePropagation != "Background" || got.HistoryLimit != 5 {
 		t.Errorf("policies did not reach the spec: %+v", got)
+	}
+}
+
+// A chart downloaded by `build --download-charts` replaces the repository
+// reference entirely: nelm gets an absolute path to the archive and nothing
+// that would send it to a registry.
+func TestDeploy_DownloadedChartIsAppliedFromTheBuildDirectory(t *testing.T) {
+	out := t.TempDir()
+	archive := filepath.Join(out, "charts", "acme_demo", "demo-1.2.3.tgz")
+	if err := os.MkdirAll(filepath.Dir(archive), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(archive, []byte("tgz"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &plan.Plan{
+		Repositories: map[string]config.Repository{"acme": {URL: "https://charts.example.com", Username: "u", Password: "p"}},
+		Releases: map[string]plan.Release{
+			"a@ns": {
+				Chart:     config.Chart{Name: "acme/demo", Version: "1.2.3"},
+				ChartFile: "charts/acme_demo/demo-1.2.3.tgz",
+			},
+		},
+	}
+
+	f := &fakeApplier{}
+	o := opts("", false)
+	o.output = out
+	if err := deploy(context.Background(), zap.NewNop(), p, o, f, opInstall); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	got := f.specs["a"]
+	if got.Chart != archive {
+		t.Errorf("chart = %q, want the archive at %q", got.Chart, archive)
+	}
+	// The archive is already one version of one chart; a constraint or a repo
+	// URL alongside it could only send nelm looking for something else.
+	if got.ChartVersion != "" || got.RepoURL != "" || got.RepoUsername != "" {
+		t.Errorf("repository settings survived the local chart: %+v", got)
+	}
+}
+
+// The planfile can travel without the rest of the build directory; say so
+// rather than letting nelm report a missing chart named by a relative path.
+func TestDeploy_MissingDownloadedChartIsReported(t *testing.T) {
+	p := &plan.Plan{
+		Releases: map[string]plan.Release{
+			"a@ns": {Chart: config.Chart{Name: "acme/demo"}, ChartFile: "charts/acme_demo/demo-1.2.3.tgz"},
+		},
+	}
+	f := &fakeApplier{}
+	o := opts("", false)
+	o.output = t.TempDir()
+	err := deploy(context.Background(), zap.NewNop(), p, o, f, opInstall)
+	if err == nil {
+		t.Fatal("expected a missing-archive error")
+	}
+	if len(f.installed) != 0 {
+		t.Errorf("nothing should have been installed, got %v", f.installed)
 	}
 }
 
