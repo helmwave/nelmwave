@@ -1,0 +1,16 @@
+kind: Added
+body: '`build --download-charts` puts every chart into `.nelmwave/charts/` and
+  points the plan at it, so `up`, `down` and `diff` need nothing but the build
+  directory — build where the charts are reachable, copy the directory over,
+  apply in isolation. Remote charts are downloaded through the same helm getters
+  nelm uses at apply time, so repository credentials, TLS material, plain-HTTP
+  OCI and `provenanceStrategy` apply unchanged and a version constraint is
+  resolved once; local charts are copied in as they are, with a relative path
+  resolved from the manifest''s directory like `values` and `stores`. Releases
+  sharing a chart share one copy, the directory is rebuilt on every run, and a
+  missing local chart fails the build rather than the apply. `up --build
+  --download-charts` does both in one step'
+time: 2026-08-07T12:00:00.000000000+03:00
+custom:
+  Issue: ""
+  Author: zhilyaev

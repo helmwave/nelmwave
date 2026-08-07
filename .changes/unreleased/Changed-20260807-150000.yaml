@@ -1,0 +1,10 @@
+kind: Changed
+body: '`build` writes every artifact through an `os.Root` scoped to the build
+  directory, so a `name:` from the manifest — or a symlink sitting in the
+  directory — cannot land a file outside `.nelmwave/`, and a local chart is
+  read through a root scoped to the chart, closing the symlink race between
+  walking a directory and reading what the walk found'
+time: 2026-08-07T15:00:00.000000000+03:00
+custom:
+  Issue: ""
+  Author: zhilyaev

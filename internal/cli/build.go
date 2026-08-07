@@ -20,8 +20,9 @@ import (
 )
 
 type buildOptions struct {
-	file   string
-	output string
+	file           string
+	output         string
+	downloadCharts bool
 }
 
 func newBuildCommand(_ *globalOptions) *cobra.Command {
@@ -37,12 +38,18 @@ It produces, under --output (default .nelmwave/):
   planfile.yml            the resolved plan: releases, dependency edges, artifacts
   values/<release>/...    values files, in merge order
   stores/<release>/...    companion files declared in stores:
+  charts/<chart>/...      the charts themselves, with --download-charts
 
 Values and store artifacts are rebuilt from scratch on every run, so sources
 removed from the manifest leave nothing behind. Within a release, stores resolve
 first, then values; each resolved artifact is registered as a gomplate
 datasource ("stores/<name>", "values/<name>") that later *.tpl artifacts of the
 same release can pull in via ds/include.
+
+--download-charts puts every chart into the build directory and points the plan
+at it: remote charts are downloaded, local ones copied in, so up/down/diff need
+nothing but .nelmwave/. Build where the registries are reachable, copy the
+directory over, apply in isolation.
 
 With no --file, build looks for nelmwave.yml.tpl and falls back to nelmwave.yml.`,
 		Example: `  # Build from nelmwave.yml.tpl in the current directory
@@ -52,13 +59,18 @@ With no --file, build looks for nelmwave.yml.tpl and falls back to nelmwave.yml.
   ENV=stg nelmwave build
 
   # Build a specific manifest into a specific directory
-  nelmwave build --file manifests/prod.yml.tpl --output .nelmwave-prod`,
+  nelmwave build --file manifests/prod.yml.tpl --output .nelmwave-prod
+
+  # Self-contained plan: charts included, nothing to fetch at apply time
+  nelmwave build --download-charts`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runBuild(cmd, o)
 		},
 	}
 	cmd.Flags().StringVar(&o.file, "file", "nelmwave.yml.tpl", "path to the nelmwave manifest (.tpl or plain yml)")
 	cmd.Flags().StringVar(&o.output, "output", plan.DefaultDir, "directory for the built plan and artifacts")
+	cmd.Flags().BoolVar(&o.downloadCharts, "download-charts", false,
+		"put every chart into the build directory so up/down/diff need nothing else")
 	return cmd
 }
 
@@ -70,12 +82,14 @@ func runBuild(cmd *cobra.Command, o *buildOptions) error {
 	if err != nil {
 		return err
 	}
-	return buildPlan(ctx, manifest, o.output, logger)
+	return buildPlan(ctx, manifest, o.output, o.downloadCharts, logger)
 }
 
 // buildPlan renders and validates manifest, resolves its datasources, and
 // writes the plan and artifacts to output. Shared by `build` and `up --build`.
-func buildPlan(ctx context.Context, manifest, output string, logger *zap.Logger) error {
+// With downloadCharts it also pulls every remote chart into output, making the
+// plan applicable without network access.
+func buildPlan(ctx context.Context, manifest, output string, downloadCharts bool, logger *zap.Logger) error {
 	logger.Info("building", zap.String("file", manifest), zap.String("output", output))
 
 	src, err := os.ReadFile(manifest)
@@ -109,6 +123,14 @@ func buildPlan(ctx context.Context, manifest, output string, logger *zap.Logger)
 	// Resolve values/store datasources relative to the manifest directory.
 	if err := build.Artifacts(ctx, cfg, p, filepath.Dir(manifest), output, logger); err != nil {
 		return err
+	}
+
+	// After the artifacts, before the planfile: downloading rewrites each
+	// release's chart reference, and the planfile has to record the result.
+	if downloadCharts {
+		if err := build.Charts(p, filepath.Dir(manifest), output, logger); err != nil {
+			return err
+		}
 	}
 
 	if err := p.Write(output); err != nil {

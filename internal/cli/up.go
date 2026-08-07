@@ -11,13 +11,14 @@ import (
 )
 
 type upOptions struct {
-	file         string
-	output       string
-	selector     string
-	concurrency  int
-	build        bool
-	includeNeeds bool
-	dryRun       bool
+	file           string
+	output         string
+	selector       string
+	concurrency    int
+	build          bool
+	downloadCharts bool
+	includeNeeds   bool
+	dryRun         bool
 }
 
 func newUpCommand(g *globalOptions) *cobra.Command {
@@ -45,6 +46,9 @@ back into the run.`,
   # Rebuild the plan and apply it, two releases at a time
   nelmwave up --build --concurrency 2
 
+  # Rebuild with the charts included, then apply without reaching outside
+  nelmwave up --build --download-charts
+
   # Preview instead of applying (same as nelmwave diff)
   nelmwave up --dry-run`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -55,6 +59,7 @@ back into the run.`,
 	f.StringVarP(&o.selector, "selector", "l", "", "k8s-style label selector to filter releases")
 	f.IntVar(&o.concurrency, "concurrency", 0, "max releases to deploy in parallel (0 = unlimited)")
 	f.BoolVar(&o.build, "build", false, "run build before up")
+	f.BoolVar(&o.downloadCharts, "download-charts", false, "with --build, put every chart into the build directory")
 	f.BoolVar(&o.includeNeeds, "include-needs", false, "pull in needed releases even if filtered out")
 	f.BoolVar(&o.dryRun, "dry-run", false, "plan instead of applying")
 	f.StringVar(&o.output, "output", plan.DefaultDir, "directory of the built plan")
@@ -71,7 +76,7 @@ func runUp(cmd *cobra.Command, g *globalOptions, o *upOptions) error {
 		if err != nil {
 			return err
 		}
-		if err := buildPlan(ctx, manifest, o.output, logger); err != nil {
+		if err := buildPlan(ctx, manifest, o.output, o.downloadCharts, logger); err != nil {
 			return err
 		}
 	}

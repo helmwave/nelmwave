@@ -253,6 +253,11 @@ chart:
 nelmwave orchestrates external charts only; it ships no chart templates of its
 own.
 
+A chart is normally fetched by nelm while the release is applied, and a local
+one is read from wherever the path points at that moment. Pass
+[`build --download-charts`](#applying-without-a-registry) to settle all of that
+during the build instead.
+
 #### `values` and `stores`
 
 Both take a list of file references resolved through the datasource layer.
@@ -571,12 +576,64 @@ releases:
   planfile.yml              resolved plan: releases, dependency edges, artifacts
   values/<uniqname>/...     values files, in merge order
   stores/<uniqname>/...     companion files from stores:
+  charts/<chart>/...        the charts themselves, with --download-charts
 ```
 
 Values and store artifacts are rebuilt from scratch on every run, so sources
 removed from the manifest leave nothing behind. The planfile is deterministic
 (map keys are sorted), so it diffs cleanly between builds and is worth reading
 in review.
+
+### Applying without a registry
+
+By default the plan records *which* chart to install and nelm gets it while
+applying, so `up` needs the chart repository — or the local chart directory —
+as much as `build` does. `--download-charts` closes that gap:
+
+```sh
+# where the charts are reachable
+nelmwave build --download-charts
+
+# anywhere else — no repository, no registry credentials, no network
+tar czf plan.tgz .nelmwave/ && scp plan.tgz isolated:
+ssh isolated 'tar xzf plan.tgz && nelmwave up'
+```
+
+Every chart goes into `.nelmwave/charts/` and is recorded in the release's
+`chartFile`. There is one rule for all of them: whatever `chart.name` said, the
+build directory now holds the chart, and `up`, `down` and `diff` load it from
+there and look nowhere else.
+
+```
+.nelmwave/charts/
+  bitnami_postgresql/postgresql-15.5.38.tgz   # from a helm repository
+  ghcr.io_acme_api/api-1.4.0.tgz              # from an OCI registry
+  api/Chart.yaml, templates/, ...             # chart: {name: ./charts/api}
+```
+
+Remote charts are downloaded through the very getters nelm uses at apply time,
+so everything a repository declares applies unchanged — credentials,
+`caFile`/`certFile`, `insecureSkipTLSVerify`, `oci+http://` and
+`provenanceStrategy`, which verifies the signature here instead of at apply
+time. A version constraint like `15.x` is therefore resolved once, during the
+build, instead of again per command.
+
+Local charts are copied in as they are: a directory whole, a packaged `.tgz` as
+the one file it is. **A relative path is resolved from the manifest's
+directory**, exactly as `values` and `stores` are — not from wherever the
+command was run. A path that does not exist, or a directory without a
+`Chart.yaml`, fails the build instead of the apply.
+
+Releases sharing a chart share one copy, and the directory is rebuilt from
+scratch on every build, so an edited local chart is picked up and a chart
+dropped from the manifest leaves nothing behind.
+
+One thing to know: an archive travels with whatever it ships in `charts/`, so a
+chart that expects its `dependencies:` to be fetched while rendering still needs
+its repositories. That is rare — published charts package their subcharts.
+
+The whole build directory has to travel, not just the planfile — `up` fails with
+a clear message if a chart it names is missing.
 
 ---
 
@@ -596,7 +653,8 @@ Global flags: `--log-level` (debug/info/warn/error), `--log-format`
 
 Common command flags: `-l/--selector`, `--concurrency`, `--output`,
 `--include-needs` (up, down, diff), `--file` (build, `up --build`),
-`--dry-run` (up), `--detailed-exitcode` (diff).
+`--download-charts` (build, `up --build`), `--dry-run` (up),
+`--detailed-exitcode` (diff).
 
 `--log-format auto` picks console output on a TTY and JSON everywhere else, so
 CI logs stay machine-readable without a flag.
@@ -786,9 +844,12 @@ make e2e      # end-to-end: start a cluster, run the suite, tear it down
 
 The end-to-end suite ([`test/e2e`](./test/e2e)) drives the real command tree
 against a real Kubernetes API: build, up, a clean diff, a drifting diff with
-exit code 2, the upgrade that resolves it, a selective down, a full down, and
-the needs policy. It installs a local chart from `testdata`, so nothing
-is downloaded and every assertion is about nelmwave's own behaviour.
+exit code 2, the upgrade that resolves it, a selective down, a full down, the
+needs policy, and `--download-charts` applying with the repository switched off
+mid-test. It installs a local chart from `testdata` — published through a
+repository the suite starts itself where a remote one is needed — so nothing is
+downloaded from the internet and every assertion is about nelmwave's own
+behaviour.
 
 The cluster is a k3s container owned by docker-compose, which keeps the fixture
 in one file. To iterate without restarting it:
@@ -829,6 +890,7 @@ internal/
   tpl/               # gomplate v5 rendering ([[ ]] delimiters)
   datasource/        # resolve values/store refs (gomplate v5)
   build/             # resolve a config's datasources into .nelmwave/ artifacts
+  chart/             # pull a remote chart into the build directory (helm getters)
   plan/              # .nelmwave/ plan build/read/write
   graph/             # concurrent dependency-DAG executor
   release/           # Applier over nelm (install/uninstall/plan)
