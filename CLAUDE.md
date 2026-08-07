@@ -124,6 +124,16 @@ package-level `Metrics` struct without synchronization, so concurrent `Render`
 calls crash with "concurrent map writes" (see the comment on
 `build.Artifacts`). Do not parallelize it until gomplate is safe.
 
+**Every build write goes through an `os.Root`.** `build.openOut` opens
+`.nelmwave/` as a root and `writeFile` takes it plus a path *relative to the
+build directory* — not an absolute one. The kernel resolves each write inside
+that root, so a `name:` out of the manifest cannot escape even if the string
+checks (`safeRelPath`) miss something, and a symlink planted in the directory
+cannot redirect a write. `copyTree` does the same on the reading side with a
+root scoped to the source chart. Do not reintroduce a bare
+`os.WriteFile`/`os.MkdirAll` here — gosec's G703/G122 will catch it in CI, and
+the paths really are attacker-shaped.
+
 **Datasource behaviour comes from the extension, not the scheme**: `.yml` copied
 verbatim, `.yml.tpl` rendered, `.yml.sops` decrypted in-process (no `sops`
 binary), `.yml.tpl.sops` decrypted then rendered. Within a release, `stores`

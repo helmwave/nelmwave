@@ -240,6 +240,41 @@ func TestIndexedBasename_DropsProcessingSuffixes(t *testing.T) {
 	}
 }
 
+func TestWriteFile_StaysInsideTheBuildDirectory(t *testing.T) {
+	// safeRelPath rejects the obvious escapes before a name gets this far. This
+	// pins the backstop underneath it: the write itself is resolved inside the
+	// build directory, so neither a traversal nor a symlink already sitting in
+	// the directory can put a file elsewhere.
+	outDir := filepath.Join(t.TempDir(), "out")
+	outside := t.TempDir()
+
+	out, err := openOut(outDir)
+	if err != nil {
+		t.Fatalf("openOut: %v", err)
+	}
+	defer func() { _ = out.Close() }()
+
+	if err := os.Symlink(outside, filepath.Join(outDir, "escape")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	for _, name := range []string{
+		filepath.Join("..", "escaped.yml"),
+		filepath.Join("escape", "escaped.yml"),
+		filepath.Join("values", "..", "..", "escaped.yml"),
+	} {
+		if err := writeFile(out, name, []byte("owned: true\n")); err == nil {
+			t.Errorf("writeFile(%q) succeeded, want an error", name)
+		}
+	}
+
+	for _, dir := range []string{filepath.Dir(outDir), outside} {
+		if _, err := os.Stat(filepath.Join(dir, "escaped.yml")); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("escaped.yml turned up in %q: %v", dir, err)
+		}
+	}
+}
+
 func TestArtifacts_WarnsWhenSecretsWereDecrypted(t *testing.T) {
 	base := t.TempDir()
 	mustWrite(t, base, "plain.yml", "a: 1\n")

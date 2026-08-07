@@ -39,20 +39,24 @@ import (
 // this once gomplate is safe for concurrent use.
 func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, outDir string, logger *zap.Logger) error {
 	res := datasource.NewResolver(baseDir)
-	valuesDir := filepath.Join(outDir, plan.ValuesDir)
-	storeDir := filepath.Join(outDir, plan.StoreDir)
+
+	out, err := openOut(outDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
 
 	// Start clean so removed releases/sources don't leave stale artifacts.
-	for _, dir := range []string{valuesDir, storeDir} {
-		if err := os.RemoveAll(dir); err != nil {
-			return fmt.Errorf("clean %q: %w", dir, err)
+	for _, dir := range []string{plan.ValuesDir, plan.StoreDir} {
+		if err := out.RemoveAll(dir); err != nil {
+			return fmt.Errorf("clean %q: %w", filepath.Join(outDir, dir), err)
 		}
 	}
 
 	// A shared empty file backs datasources for skipped optional artifacts, so a
 	// reference to one renders empty instead of erroring. It is written on first
 	// use, so a manifest without optional sources leaves no stray file behind.
-	emptyURL := lazyEmptyPlaceholder(outDir)
+	emptyURL := lazyEmptyPlaceholder(out)
 
 	for _, key := range p.ReleaseNames() {
 		rc := cfg.Releases[key]
@@ -61,10 +65,10 @@ func Artifacts(ctx context.Context, cfg *config.Config, p *plan.Plan, baseDir, o
 		// sources accumulates this release's resolved artifact datasources.
 		sources := map[string]string{}
 
-		if _, err := resolveList(ctx, res, rc.Stores, key, outDir, plan.StoreDir, "stores", sources, emptyURL, log); err != nil {
+		if _, err := resolveList(ctx, res, rc.Stores, key, out, plan.StoreDir, "stores", sources, emptyURL, log); err != nil {
 			return err
 		}
-		files, err := resolveList(ctx, res, rc.Values, key, outDir, plan.ValuesDir, "values", sources, emptyURL, log)
+		files, err := resolveList(ctx, res, rc.Values, key, out, plan.ValuesDir, "values", sources, emptyURL, log)
 		if err != nil {
 			return err
 		}
@@ -102,11 +106,11 @@ func warnAboutDecryptedSecrets(cfg *config.Config, outDir string, logger *zap.Lo
 }
 
 // resolveList resolves one ordered list of refs (values or store) for a release,
-// writing each artifact under outDir/subDir/<uniqname>/ and registering it in
-// sources under "<ns>/<name>". It returns the plan-relative paths of the written
-// files (used for values). A skipped optional is registered to emptyURL.
-func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.FileRef, key, outDir, subDir, ns string, sources map[string]string, emptyURL func() (string, error), log *zap.Logger) ([]string, error) {
-	relDir := filepath.Join(outDir, subDir, sanitize(key))
+// writing each artifact under <build dir>/subDir/<uniqname>/ and registering it
+// in sources under "<ns>/<name>". It returns the plan-relative paths of the
+// written files (used for values). A skipped optional is registered to emptyURL.
+func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.FileRef, key string, out *os.Root, subDir, ns string, sources map[string]string, emptyURL func() (string, error), log *zap.Logger) ([]string, error) {
+	relDir := filepath.Join(subDir, sanitize(key))
 	seen := make(map[string]struct{})
 	var files []string
 	for i, ref := range refs {
@@ -135,24 +139,24 @@ func resolveList(ctx context.Context, res *datasource.Resolver, refs []config.Fi
 		}
 
 		path := filepath.Join(relDir, filepath.FromSlash(name))
-		if err := writeFile(path, data); err != nil {
+		if err := writeFile(out, path, data); err != nil {
 			return nil, err
 		}
-		sources[dsKey], err = fileURL(path)
+		sources[dsKey], err = fileURL(filepath.Join(out.Name(), path))
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, filepath.ToSlash(filepath.Join(subDir, sanitize(key), name)))
+		files = append(files, filepath.ToSlash(path))
 		log.Debug("artifact resolved", zap.String("datasource", dsKey))
 	}
 	return files, nil
 }
 
 // lazyEmptyPlaceholder returns a func that creates the shared empty placeholder
-// under outDir on first call and returns its file:// URL, memoizing the result.
-// The sync.Once keeps it to a single write even though resolution is currently
-// sequential, so this stays correct if that ever changes.
-func lazyEmptyPlaceholder(outDir string) func() (string, error) {
+// in the build directory on first call and returns its file:// URL, memoizing
+// the result. The sync.Once keeps it to a single write even though resolution is
+// currently sequential, so this stays correct if that ever changes.
+func lazyEmptyPlaceholder(out *os.Root) func() (string, error) {
 	var (
 		once sync.Once
 		url  string
@@ -160,11 +164,11 @@ func lazyEmptyPlaceholder(outDir string) func() (string, error) {
 	)
 	return func() (string, error) {
 		once.Do(func() {
-			path := filepath.Join(outDir, ".empty")
-			if err = writeFile(path, nil); err != nil {
+			const name = ".empty"
+			if err = writeFile(out, name, nil); err != nil {
 				return
 			}
-			url, err = fileURL(path)
+			url, err = fileURL(filepath.Join(out.Name(), name))
 		})
 		return url, err
 	}
@@ -254,12 +258,32 @@ func sanitize(key string) string {
 	return strings.NewReplacer("/", "_", string(filepath.Separator), "_").Replace(key)
 }
 
-func writeFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create dir for %q: %w", path, err)
+// openOut opens the build directory as an os.Root, creating it if needed. Every
+// artifact below is written through that root, so the kernel resolves each path
+// inside the build directory: a name that came from the manifest cannot escape
+// it, and neither can a symlink planted between two writes. safeRelPath still
+// rejects the obvious escapes up front — this is the backstop that does not
+// depend on getting the string handling right.
+func openOut(outDir string) (*os.Root, error) {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create build dir %q: %w", outDir, err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write %q: %w", path, err)
+	root, err := os.OpenRoot(outDir)
+	if err != nil {
+		return nil, fmt.Errorf("open build dir %q: %w", outDir, err)
+	}
+	return root, nil
+}
+
+// writeFile writes one artifact at name, a path relative to the build directory.
+func writeFile(out *os.Root, name string, data []byte) error {
+	if dir := filepath.Dir(name); dir != "." {
+		if err := out.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create dir for %q: %w", name, err)
+		}
+	}
+	if err := out.WriteFile(name, data, 0o644); err != nil {
+		return fmt.Errorf("write %q: %w", name, err)
 	}
 	return nil
 }

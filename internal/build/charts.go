@@ -32,9 +32,14 @@ import (
 // picked up, and a floating version constraint is re-resolved rather than
 // pinned by an old build.
 func Charts(p *plan.Plan, baseDir, outDir string, logger *zap.Logger) error {
-	chartsDir := filepath.Join(outDir, plan.ChartsDir)
-	if err := os.RemoveAll(chartsDir); err != nil {
-		return fmt.Errorf("clean %q: %w", chartsDir, err)
+	out, err := openOut(outDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
+
+	if err := out.RemoveAll(plan.ChartsDir); err != nil {
+		return fmt.Errorf("clean %q: %w", filepath.Join(outDir, plan.ChartsDir), err)
 	}
 
 	// OCI credentials reach the helm getter through a Docker config.json, the
@@ -81,11 +86,13 @@ func Charts(p *plan.Plan, baseDir, outDir string, logger *zap.Logger) error {
 
 		path, done := cache[cacheKey]
 		if !done {
-			dir := filepath.Join(chartsDir, chartDir(dirs, label, dirKey))
+			// Relative to the build directory: what the plan records, and what
+			// the os.Root writes below resolve against.
+			dir := filepath.Join(plan.ChartsDir, chartDir(dirs, label, dirKey))
 			if remote {
-				path, err = download(res, rel.Chart.Version, registryConfig, dir, outDir)
+				path, err = download(res, rel.Chart.Version, registryConfig, filepath.Join(outDir, dir), outDir)
 			} else {
-				path, err = copyLocal(src, dir, outDir)
+				path, err = copyLocal(src, out, dir)
 			}
 			if err != nil {
 				return fmt.Errorf("release %q: %w", key, err)
@@ -149,11 +156,12 @@ func localSource(baseDir, ref string) string {
 	return filepath.Clean(filepath.Join(baseDir, path))
 }
 
-// copyLocal copies a chart that is already on disk into dir and returns its
-// path relative to outDir. A packaged chart lands beside its directory like a
-// downloaded one; an unpacked chart becomes the directory itself, so what the
-// plan points at is the chart as the manifest pointed at it.
-func copyLocal(src, dir, outDir string) (string, error) {
+// copyLocal copies a chart that is already on disk into dir — a path relative to
+// the build directory — and returns that path the way the plan records it. A
+// packaged chart lands beside its directory like a downloaded one; an unpacked
+// chart becomes the directory itself, so what the plan points at is the chart as
+// the manifest pointed at it.
+func copyLocal(src string, out *os.Root, dir string) (string, error) {
 	info, err := os.Stat(src)
 	if err != nil {
 		return "", fmt.Errorf("local chart %q (a relative path is resolved from the manifest's directory): %w", src, err)
@@ -165,10 +173,10 @@ func copyLocal(src, dir, outDir string) (string, error) {
 			return "", fmt.Errorf("read local chart %q: %w", src, err)
 		}
 		dest := filepath.Join(dir, filepath.Base(src))
-		if err := writeFile(dest, data); err != nil {
+		if err := writeFile(out, dest, data); err != nil {
 			return "", err
 		}
-		return planPath(dest, outDir)
+		return filepath.ToSlash(dest), nil
 	}
 
 	// A directory with no Chart.yaml is not a chart, and saying so here beats
@@ -176,27 +184,33 @@ func copyLocal(src, dir, outDir string) (string, error) {
 	if _, err := os.Stat(filepath.Join(src, "Chart.yaml")); err != nil {
 		return "", fmt.Errorf("local chart %q has no Chart.yaml", src)
 	}
-	if err := copyTree(src, dir); err != nil {
+	if err := copyTree(src, out, dir); err != nil {
 		return "", fmt.Errorf("copy local chart %q: %w", src, err)
 	}
-	return planPath(dir, outDir)
+	return filepath.ToSlash(dir), nil
 }
 
-// copyTree copies a directory recursively, keeping regular files and the
-// directories holding them. Anything else — sockets, devices, dangling
+// copyTree copies a directory recursively into dest/dir, keeping regular files
+// and the directories holding them. Anything else — sockets, devices, dangling
 // symlinks — is not part of a chart and is skipped rather than reproduced.
-func copyTree(src, dest string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+//
+// The source is walked through its own os.Root, so every read is resolved by the
+// kernel inside the chart directory. Walking and reading are two steps, and a
+// symlink appearing between them cannot redirect the read outside the chart.
+func copyTree(src string, out *os.Root, dir string) error {
+	srcRoot, err := os.OpenRoot(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = srcRoot.Close() }()
+
+	return fs.WalkDir(srcRoot.FS(), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dest, rel)
+		target := filepath.Join(dir, filepath.FromSlash(path))
 		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			return out.MkdirAll(target, 0o755)
 		}
 		info, err := d.Info()
 		if err != nil {
@@ -205,11 +219,11 @@ func copyTree(src, dest string) error {
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := srcRoot.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		return writeFile(target, data)
+		return writeFile(out, target, data)
 	})
 }
 
