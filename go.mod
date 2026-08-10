@@ -5,7 +5,7 @@ go 1.26.5
 require (
 	github.com/getsops/sops/v3 v3.13.3
 	github.com/hairyhenderson/gomplate/v5 v5.2.0
-	github.com/helmwave/confijer v0.0.0-20260804153433-bcaead09d8ba
+	github.com/helmwave/confijer v1.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/werf/nelm v1.28.0
