@@ -186,6 +186,9 @@ an OCI chart is matched to its registry by address prefix, longest first.
 A map keyed by **uniqname** — `name[@namespace[@kubecontext]]`:
 
 ```yaml
+Release:
+  chart: { name: repo/api }   # one chart, three identities
+
 releases:
   api:                      # current context, its default namespace
   api@app:                  # namespace app
@@ -238,9 +241,11 @@ different thing and not implemented yet.
 #### `chart`
 
 ```yaml
-chart:
-  name: bitnami/postgresql       # <repo-alias>/<chart>
-  version: 15.x
+releases:
+  postgres@data:
+    chart:
+      name: bitnami/postgresql       # <repo-alias>/<chart>
+      version: 15.x
 ```
 
 `name` is required and may be:
@@ -268,11 +273,14 @@ alongside it.
 Four equivalent spellings are accepted:
 
 ```yaml
-values:
-  - src: file://values/pg.yml.tpl   # mapping, with scheme
-  - file://values/pg.yml.tpl        # bare string, with scheme
-  - src: values/pg.yml.tpl          # mapping, no scheme (local file)
-  - values/pg.yml.tpl               # bare string, no scheme (local file)
+releases:
+  postgres@data:
+    chart: { name: bitnami/postgresql }
+    values:
+      - src: file://values/pg.yml.tpl   # mapping, with scheme
+      - file://values/pg.yml.tpl        # bare string, with scheme
+      - src: values/pg.yml.tpl          # mapping, no scheme (local file)
+      - values/pg.yml.tpl               # bare string, no scheme (local file)
 ```
 
 | Field | Meaning |
@@ -298,10 +306,13 @@ Keys come from the ambient environment, exactly as they do for the sops CLI:
 neither stores nor configures key material.
 
 ```yaml
-values:
-  - values/db-credentials.yml.sops
-stores:
-  - { src: secrets/tls.yml.sops, name: tls.yml }
+releases:
+  api@app:
+    chart: { name: repo/api }
+    values:
+      - values/db-credentials.yml.sops
+    stores:
+      - { src: secrets/tls.yml.sops, name: tls.yml }
 ```
 
 The format handed to sops comes from the extension under `.sops`: `.yml`/`.yaml`
@@ -339,9 +350,12 @@ file name — the `name` you gave it, or the generated `00-base.yml` otherwise. 
 later `.tpl` can then pull in an earlier artifact:
 
 ```yaml
-values:
-  - { src: values/base.yml,     name: base.yml }
-  - { src: values/app.yml.tpl,  name: app.yml }   # can read base.yml
+releases:
+  api@app:
+    chart: { name: repo/api }
+    values:
+      - { src: values/base.yml,     name: base.yml }
+      - { src: values/app.yml.tpl,  name: app.yml }   # can read base.yml
 ```
 
 ```gotemplate
@@ -362,10 +376,13 @@ placeholder rather than an error. See
 Inline value overrides, applied on top of `values` (highest precedence):
 
 ```yaml
-sets:
-  replicaCount: 3
-  image.tag: "1.4.2"
-  ingress.enabled: false
+releases:
+  api@app:
+    chart: { name: repo/api }
+    sets:
+      replicaCount: 3
+      image.tag: "1.4.2"
+      ingress.enabled: false
 ```
 
 Keys are dotted paths, as with `helm --set`, but values keep their YAML type —
@@ -378,14 +395,20 @@ Dependency edges. All parts combine: a release waits for every release named in
 `needs.releases` **plus** every release matched by the inlined label selector.
 
 ```yaml
-needs:
-  releases:
-    postgres@data: {}                 # required (the default)
-    metrics@obs: { optional: true }    # nice to have
-  matchLabels:
-    tier: db
-  matchLabelsExpressions:
-    - { key: env, operator: In, values: [prod, stg] }
+releases:
+  postgres@data: { chart: { name: bitnami/postgresql } }
+  metrics@obs:   { chart: { name: prometheus/metrics } }
+
+  api@app:
+    chart: { name: repo/api }
+    needs:
+      releases:
+        postgres@data: {}                # required (the default)
+        metrics@obs: { optional: true }  # nice to have
+      matchLabels:
+        tier: db
+      matchLabelsExpressions:
+        - { key: env, operator: In, values: [prod, stg] }
 ```
 
 `optional` decides what happens when the dependency is filtered out of the
@@ -548,6 +571,7 @@ Maps deep-merge, and a release's own key wins:
 
 ```yaml
 Release:
+  chart: { name: repo/api }
   labels: { team: platform, env: prod }
 
 releases:
@@ -562,6 +586,7 @@ To share a base values file, list it explicitly:
 ```yaml
 releases:
   api@app:
+    chart: { name: repo/api }
     values:
       - values/common.yml
       - values/api.yml.tpl

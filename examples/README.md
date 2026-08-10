@@ -13,6 +13,7 @@ cat .nelmwave/planfile.yml
 |---|---|
 | [`quickstart`](./quickstart) | The core schema: repositories (helm + OCI), releases by uniqname, needs, values/stores, inline `sets`, `Release:` defaults. |
 | [`needs`](./needs) | Dependencies: explicit, by label selector, by expressions; `optional`, `--include-needs` in both directions, parallel apply. |
+| [`labels`](./labels) | Labels and `-l` selection: `Release:` defaults, every selector operator, why `build` has no `-l`, completion. |
 | [`repositories`](./repositories) | Every chart source: helm repo, OCI, `oci+http://`, basic auth, mTLS, chart signatures. |
 | [`namespaces`](./namespaces) | The `namespace:` block: creation, deletion, policy labels applied before the release. |
 | [`policies`](./policies) | Resource policies (`forceAdoption`, `removeManualChanges`, `installCRDs`, `deletePropagation`, `historyLimit`) and release `labels`/`annotations`. |
