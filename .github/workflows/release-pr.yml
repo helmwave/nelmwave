@@ -45,19 +45,19 @@ jobs:
       # pushed as the bot too: a branch pushed with GITHUB_TOKEN does not trigger
       # workflows, and neither does a PR opened with it — the release PR would
       # then sit there with no CI on the very commit that gets tagged.
-      - uses: actions/create-github-app-token@v2
+      - uses: actions/create-github-app-token@v3
         id: app-token
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - uses: miniscruff/changie-action@v2
+      - uses: miniscruff/changie-action@v3
         with:
           version: latest
           args: --version
