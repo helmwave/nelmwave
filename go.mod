@@ -8,7 +8,7 @@ require (
 	github.com/helmwave/confijer v1.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/werf/nelm v1.28.0
+	github.com/werf/nelm v1.29.1
 	go.uber.org/zap v1.28.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -271,7 +271,7 @@ require (
 	github.com/urfave/cli v1.22.17 // indirect
 	github.com/wI2L/jsondiff v0.5.0 // indirect
 	github.com/werf/common-go v0.0.0-20251113140850-a1a98e909e9b // indirect
-	github.com/werf/kubedog v0.13.1-0.20260616105957-2c00b08fb99e // indirect
+	github.com/werf/kubedog v0.13.1-0.20260811104953-26a7ce74643f // indirect
 	github.com/werf/lockgate v0.1.1 // indirect
 	github.com/werf/logboek v0.6.1 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
